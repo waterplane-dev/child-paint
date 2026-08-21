@@ -183,10 +183,11 @@ private fun Activity.runUnlockStep(
         return
     }
 
-    // Factor A is two digits and factor B is 6..9: quick for an adult, out of
-    // reach for the age this app is aimed at.
-    val a = Random.nextInt(12, 30)
-    val b = Random.nextInt(6, 10)
+    // Single-digit times table: instant for an adult, still well out of reach for
+    // the age this app is aimed at. Two-digit factors only made the parent do
+    // arithmetic one-handed while holding a child.
+    val a = Random.nextInt(3, 10)
+    val b = Random.nextInt(3, 10)
 
     val prompt = if (step == STEP_MATH) getString(R.string.unlock_math, a, b) else getString(R.string.unlock_pin)
     val field = EditText(this).apply {

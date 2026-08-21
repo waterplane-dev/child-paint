@@ -18,6 +18,7 @@ import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
+import android.view.inputmethod.InputMethodManager
 import androidx.activity.OnBackPressedCallback
 import android.widget.EditText
 import android.widget.ImageView
@@ -193,10 +194,10 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** Repaints the countdown badge and shows the blocking overlay once time runs out. */
+    /** Repaints the time-left bar and shows the blocking overlay once time runs out. */
     private fun refreshKidChrome() {
         if (!kidMode.active) {
-            binding.timerBadge.visibility = View.GONE
+            binding.timerHud.visibility = View.GONE
             binding.expiredOverlay.visibility = View.GONE
             return
         }
@@ -205,37 +206,37 @@ class MainActivity : AppCompatActivity() {
         binding.expiredOverlay.visibility = if (expired) View.VISIBLE else View.GONE
 
         if (!kidMode.hasTimeLimit || expired) {
-            binding.timerBadge.visibility = View.GONE
+            binding.timerHud.visibility = View.GONE
             return
         }
 
         val remaining = kidMode.remainingSeconds
+        val total = kidMode.totalSeconds.toLong().coerceAtLeast(1L)
         val accent = when {
             remaining <= 60 -> 0xFFE53935.toInt()
             remaining <= 300 -> 0xFFFF8F00.toInt()
             else -> 0xFF2E7D32.toInt()
         }
-        binding.timerBadge.apply {
+
+        binding.timerHud.apply {
             visibility = View.VISIBLE
-            text = formatRemaining(remaining)
-            setTextColor(accent)
             background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
-                cornerRadius = dp(20).toFloat()
+                cornerRadius = dp(16).toFloat()
                 setColor(0xE6FFFFFF.toInt())
                 setStroke(dp(2), accent)
             }
         }
-    }
-
-    private fun formatRemaining(seconds: Long): String {
-        val hours = seconds / 3600
-        val minutes = (seconds % 3600) / 60
-        val secs = seconds % 60
-        return if (hours > 0) {
-            String.format("%dh %02dm", hours, minutes)
-        } else {
-            String.format("%02d:%02d", minutes, secs)
+        binding.timerBar.apply {
+            // Scaled to a 1000-step max so the bar still creeps visibly on a long
+            // session; a per-second max would jump in whole percent steps.
+            progress = ((remaining.coerceAtMost(total) * 1000L) / total).toInt()
+            progressTintList = ColorStateList.valueOf(accent)
+            progressBackgroundTintList = ColorStateList.valueOf(0x33000000)
+        }
+        binding.lastMinuteLabel.apply {
+            visibility = if (remaining <= 60) View.VISIBLE else View.GONE
+            setTextColor(accent)
         }
     }
 
@@ -480,14 +481,25 @@ class MainActivity : AppCompatActivity() {
             setSingleLine()
             setPadding(dp(20), dp(16), dp(20), dp(16))
         }
-        AlertDialog.Builder(this)
+        val dialog = AlertDialog.Builder(this)
             .setTitle(R.string.text_dialog_title)
             .setView(input)
             .setPositiveButton(R.string.ok) { _, _ ->
                 binding.paintView.addText(input.text.toString(), x, y)
             }
             .setNegativeButton(R.string.cancel, null)
-            .show()
+            .create()
+
+        // The keyboard comes up with the dialog. Asking for the field to be tapped
+        // as well is one step too many, and in kid mode the immersive flags mean the
+        // soft input mode alone is not always enough — hence the explicit request.
+        input.requestFocus()
+        dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE)
+        dialog.show()
+        input.post {
+            val imm = getSystemService(InputMethodManager::class.java)
+            imm?.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT)
+        }
     }
 
     // ---- saving ---------------------------------------------------------------
