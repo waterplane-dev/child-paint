@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.ChildPaint" parent="Theme.Material3.Light.NoActionBar">
+        <item name="android:statusBarColor">@color/chrome</item>
+        <item name="android:navigationBarColor">@color/chrome</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+</resources>

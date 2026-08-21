@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Paint</string>
+    <string name="text_dialog_title">What should it say?</string>
+    <string name="ok">OK</string>
+    <string name="cancel">Cancel</string>
+    <string name="saved">Picture saved</string>
+    <string name="save_failed">Could not save the picture</string>
+    <string name="storage_needed">Saving needs permission to write to your gallery</string>
+</resources>
