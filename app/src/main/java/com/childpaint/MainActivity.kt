@@ -10,10 +10,16 @@ import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import android.provider.MediaStore
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
+import android.view.WindowInsets
+import android.view.WindowInsetsController
+import android.view.WindowManager
+import androidx.activity.OnBackPressedCallback
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.SeekBar
@@ -26,6 +32,7 @@ import androidx.core.content.ContextCompat
 import com.childpaint.databinding.ActivityMainBinding
 import java.io.File
 import java.io.FileOutputStream
+import java.util.concurrent.Executors
 
 class MainActivity : AppCompatActivity() {
 
@@ -36,6 +43,21 @@ class MainActivity : AppCompatActivity() {
     private lateinit var fillToggle: TextView
     private lateinit var undoButton: TextView
     private lateinit var redoButton: TextView
+    private lateinit var saveButton: TextView
+    private lateinit var kidModeButton: TextView
+
+    private val kidMode by lazy { KidModeState(this) }
+    private val autosaveExecutor = Executors.newSingleThreadExecutor()
+    private val autosave = Runnable { persistPicture() }
+    private val ticker = Handler(Looper.getMainLooper())
+    private val tick = object : Runnable {
+        override fun run() {
+            refreshKidChrome()
+            ticker.postDelayed(this, 1000L)
+        }
+    }
+
+    private var backBlocker: OnBackPressedCallback? = null
 
     private val requestStorage = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -53,7 +75,10 @@ class MainActivity : AppCompatActivity() {
         buildActionRow()
 
         binding.paintView.onTextRequested = { x, y -> promptForText(x, y) }
-        binding.paintView.onHistoryChanged = { refreshHistoryButtons() }
+        binding.paintView.onHistoryChanged = {
+            refreshHistoryButtons()
+            scheduleAutosave()
+        }
 
         binding.sizeBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(bar: SeekBar, progress: Int, fromUser: Boolean) {
@@ -64,6 +89,16 @@ class MainActivity : AppCompatActivity() {
             override fun onStopTrackingTouch(bar: SeekBar) = Unit
         })
 
+        binding.lockCorner.setOnLongClickListener { attemptUnlock(); true }
+        binding.lockCorner.setOnClickListener { toast(getString(R.string.pin_hold_hint)) }
+        binding.expiredUnlock.setOnClickListener { attemptUnlock() }
+
+        // In kid mode Back must do nothing at all: the only way out is the guarded
+        // unlock, and a child mashing Back should not even get a dialog to poke at.
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(false) {
+            override fun handleOnBackPressed() = Unit
+        }.also { backBlocker = it })
+
         restoreLastPicture()
         binding.paintView.strokeWidth = progressToWidth(binding.sizeBar.progress)
         selectColor(PALETTE[0])
@@ -72,9 +107,159 @@ class MainActivity : AppCompatActivity() {
         refreshHistoryButtons()
     }
 
+    override fun onStart() {
+        super.onStart()
+        // Kid mode is re-entered from persisted state, so a force-stop does not escape it.
+        applyKidMode(started = false)
+        ticker.post(tick)
+    }
+
     override fun onStop() {
         super.onStop()
+        ticker.removeCallbacks(tick)
+        ticker.removeCallbacks(autosave)
         persistPicture()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        autosaveExecutor.shutdown()
+    }
+
+    /**
+     * Autosaving on onStop alone is not enough: in kid mode Home and Back are
+     * blocked, so killing the app is the one exit a child can actually reach — and
+     * a kill never runs onStop. Saving shortly after each finished stroke means the
+     * worst case loses a second of drawing instead of the whole picture.
+     */
+    private fun scheduleAutosave() {
+        ticker.removeCallbacks(autosave)
+        ticker.postDelayed(autosave, AUTOSAVE_DELAY_MS)
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        // System UI creeps back after dialogs and transient swipes; re-assert it.
+        if (hasFocus && kidMode.active) applyImmersiveMode()
+    }
+
+    // ---- kid mode -------------------------------------------------------------
+
+    /**
+     * Brings the whole UI in line with [KidModeState]. Called on every start, not
+     * just when the parent flips the switch, so a relaunch lands back in kid mode.
+     */
+    private fun applyKidMode(started: Boolean) {
+        val active = kidMode.active
+        backBlocker?.isEnabled = active
+
+        // No saving in kid mode: one canvas, and nothing lands in the phone gallery.
+        saveButton.visibility = if (active) View.GONE else View.VISIBLE
+        kidModeButton.visibility = if (active) View.GONE else View.VISIBLE
+        binding.lockCorner.visibility = if (active) View.VISIBLE else View.GONE
+
+        if (active) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            applyImmersiveMode()
+            try {
+                // Real pinning needs the user to confirm screen pinning, or a device
+                // owner to allowlist us. Best-effort: the rest of kid mode still holds.
+                startLockTask()
+            } catch (e: Exception) {
+                // Ignore; immersive mode and the blocked Back button remain in force.
+            }
+            if (started) toast(getString(R.string.kid_mode_started))
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            clearImmersiveMode()
+            try {
+                stopLockTask()
+            } catch (e: Exception) {
+                // Ignore when lock task was never entered.
+            }
+        }
+        refreshKidChrome()
+    }
+
+    private fun attemptUnlock() {
+        showUnlockDialog(kidMode) {
+            kidMode.stop()
+            applyKidMode(started = false)
+            toast(getString(R.string.kid_mode_ended))
+        }
+    }
+
+    /** Repaints the countdown badge and shows the blocking overlay once time runs out. */
+    private fun refreshKidChrome() {
+        if (!kidMode.active) {
+            binding.timerBadge.visibility = View.GONE
+            binding.expiredOverlay.visibility = View.GONE
+            return
+        }
+
+        val expired = kidMode.expired
+        binding.expiredOverlay.visibility = if (expired) View.VISIBLE else View.GONE
+
+        if (!kidMode.hasTimeLimit || expired) {
+            binding.timerBadge.visibility = View.GONE
+            return
+        }
+
+        val remaining = kidMode.remainingSeconds
+        val accent = when {
+            remaining <= 60 -> 0xFFE53935.toInt()
+            remaining <= 300 -> 0xFFFF8F00.toInt()
+            else -> 0xFF2E7D32.toInt()
+        }
+        binding.timerBadge.apply {
+            visibility = View.VISIBLE
+            text = formatRemaining(remaining)
+            setTextColor(accent)
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(20).toFloat()
+                setColor(0xE6FFFFFF.toInt())
+                setStroke(dp(2), accent)
+            }
+        }
+    }
+
+    private fun formatRemaining(seconds: Long): String {
+        val hours = seconds / 3600
+        val minutes = (seconds % 3600) / 60
+        val secs = seconds % 60
+        return if (hours > 0) {
+            String.format("%dh %02dm", hours, minutes)
+        } else {
+            String.format("%02d:%02d", minutes, secs)
+        }
+    }
+
+    private fun applyImmersiveMode() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.insetsController?.let { controller ->
+                controller.hide(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars())
+                controller.systemBarsBehavior =
+                    WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            window.decorView.systemUiVisibility =
+                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
+                    View.SYSTEM_UI_FLAG_FULLSCREEN or
+                    View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                    View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                    View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+        }
+    }
+
+    private fun clearImmersiveMode() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.insetsController?.show(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars())
+        } else {
+            @Suppress("DEPRECATION")
+            window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_VISIBLE
+        }
     }
 
     /**
@@ -83,13 +268,18 @@ class MainActivity : AppCompatActivity() {
      * and put back on launch, independently of the explicit save-to-gallery button.
      */
     private fun persistPicture() {
+        // Copy on the UI thread (cheap), encode off it (not cheap).
         val bitmap = binding.paintView.exportBitmap() ?: return
-        try {
-            FileOutputStream(File(filesDir, AUTOSAVE_NAME)).use { out ->
-                bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+        val target = File(filesDir, AUTOSAVE_NAME)
+        if (autosaveExecutor.isShutdown) return
+        autosaveExecutor.execute {
+            try {
+                FileOutputStream(target).use { out ->
+                    bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+                }
+            } catch (e: Exception) {
+                // A failed autosave must never take the app down mid-drawing.
             }
-        } catch (e: Exception) {
-            // A failed autosave must never take the app down mid-drawing.
         }
     }
 
@@ -165,9 +355,12 @@ class MainActivity : AppCompatActivity() {
         undoButton = chromeButton("\u21B6").apply { setOnClickListener { binding.paintView.undo() } }
         redoButton = chromeButton("\u21B7").apply { setOnClickListener { binding.paintView.redo() } }
         val clear = chromeButton("\uD83D\uDDD1").apply { setOnClickListener { binding.paintView.clearPaper() } }
-        val save = chromeButton("\uD83D\uDCBE").apply { setOnClickListener { onSaveClicked() } }
+        saveButton = chromeButton("\uD83D\uDCBE").apply { setOnClickListener { onSaveClicked() } }
+        kidModeButton = chromeButton("\uD83D\uDD12").apply {
+            setOnClickListener { showKidModeSetup(kidMode) { applyKidMode(started = true) } }
+        }
 
-        for (b in listOf(fillToggle, undoButton, redoButton, clear, save)) {
+        for (b in listOf(fillToggle, undoButton, redoButton, clear, saveButton, kidModeButton)) {
             b.layoutParams = cellParams(52)
             binding.actionRow.addView(b)
         }
@@ -323,6 +516,7 @@ class MainActivity : AppCompatActivity() {
 
     private companion object {
         const val AUTOSAVE_NAME = "canvas.png"
+        const val AUTOSAVE_DELAY_MS = 1200L
 
         const val COLORS_PER_ROW = 8
         const val TOOLS_PER_ROW = 5

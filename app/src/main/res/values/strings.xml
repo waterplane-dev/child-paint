@@ -7,4 +7,30 @@
     <string name="saved">Picture saved</string>
     <string name="save_failed">Could not save the picture</string>
     <string name="storage_needed">Saving needs permission to write to your gallery</string>
+
+    <string name="lock_glyph">\uD83D\uDD12</string>
+    <string name="time_up_glyph">\u23F3</string>
+    <string name="time_up_title">Time is up!</string>
+    <string name="time_up_hint">The drawing is safe. A grown-up can give you more time.</string>
+    <string name="grown_ups">\uD83D\uDD12 Grown-ups</string>
+
+    <string name="kid_setup_title">Start kid mode</string>
+    <string name="kid_setup_explainer">One canvas, no saving, and the app cannot be left until you unlock it.</string>
+    <string name="kid_setup_duration">How long?</string>
+    <string name="kid_setup_pin_hint">4-digit PIN</string>
+    <string name="kid_setup_pin_error">Enter exactly 4 digits</string>
+    <string name="kid_setup_custom_hint">Minutes (1\u20131440)</string>
+    <string name="kid_setup_custom_error">Enter 1 to 1440 minutes</string>
+    <string name="kid_setup_require_pin">Ask for a PIN to unlock</string>
+    <string name="kid_setup_require_math">Ask a maths question to unlock</string>
+    <string name="kid_setup_start">Start</string>
+    <string name="kid_mode_started">Kid mode on. Hold the lock to leave.</string>
+    <string name="kid_mode_ended">Kid mode off</string>
+    <string name="pin_hold_hint">Press and hold to unlock</string>
+
+    <string name="unlock_title">Grown-ups only</string>
+    <string name="unlock_math">What is %1$d \u00D7 %2$d?</string>
+    <string name="unlock_pin">Enter the PIN</string>
+    <string name="unlock_confirm">Leave kid mode?</string>
+    <string name="unlock_wrong">Not right</string>
 </resources>

@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="Theme.ChildPaint" parent="Theme.Material3.Light.NoActionBar">
+        <!-- Immersive mode hides the bars but the decor still shows through where
+             they were; without this the strip renders black in kid mode. -->
+        <item name="android:windowBackground">@color/chrome</item>
         <item name="android:statusBarColor">@color/chrome</item>
         <item name="android:navigationBarColor">@color/chrome</item>
         <item name="android:windowLightStatusBar">true</item>
