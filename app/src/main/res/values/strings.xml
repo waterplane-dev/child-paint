@@ -6,6 +6,8 @@
     <string name="cancel">Cancel</string>
     <string name="saved">Picture saved</string>
     <string name="save_failed">Could not save the picture</string>
+    <string name="clear_hold_hint">Press and hold to start a new picture</string>
+    <string name="cleared">New picture. Undo brings the old one back.</string>
     <string name="storage_needed">Saving needs permission to write to your gallery</string>
 
     <string name="lock_glyph">\uD83D\uDD12</string>

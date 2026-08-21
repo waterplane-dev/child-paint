@@ -17,12 +17,25 @@ object FloodFill {
 
     const val DEFAULT_TOLERANCE = 64
 
+    /**
+     * One scratch buffer, reused across fills. A full-screen fill otherwise
+     * allocates ~10 MB of ints per call, and undo replays every fill still in the
+     * history — enough churn to stall on GC. Fills only ever run from the view's
+     * touch handling and from replay, both on the UI thread, so sharing is safe.
+     */
+    private var scratch = IntArray(0)
+
+    private fun scratchOf(size: Int): IntArray {
+        if (scratch.size < size) scratch = IntArray(size)
+        return scratch
+    }
+
     fun fill(bitmap: Bitmap, startX: Int, startY: Int, newColor: Int, tolerance: Int) {
         val w = bitmap.width
         val h = bitmap.height
         if (startX < 0 || startX >= w || startY < 0 || startY >= h) return
 
-        val pixels = IntArray(w * h)
+        val pixels = scratchOf(w * h)
         bitmap.getPixels(pixels, 0, w, 0, 0, w, h)
 
         val target = pixels[startY * w + startX]

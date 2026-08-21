@@ -50,6 +50,19 @@ class PaintCanvasView @JvmOverloads constructor(
      */
     private var basePicture: Bitmap? = null
 
+    /**
+     * Bitmap snapshots taken every [CHECKPOINT_INTERVAL] committed ops, so a replay
+     * only has to re-run a bounded suffix of the history.
+     *
+     * The op list keeps memory flat, but replay cost grows with it, and a [FillOp]
+     * is not cheap to re-run: it walks every pixel of the bitmap. A picture with a
+     * dozen fills in it made undo a visible freeze. Two snapshots (~8 MB apiece)
+     * are kept so undoing back past the newest one still lands on a snapshot.
+     */
+    private class Checkpoint(val opCount: Int, val bitmap: Bitmap)
+
+    private val checkpoints = mutableListOf<Checkpoint>()
+
     // In-progress gesture, drawn as a preview over the bitmap until the finger lifts.
     private var activePath: Path? = null
     private var downX = 0f
@@ -57,6 +70,7 @@ class PaintCanvasView @JvmOverloads constructor(
     private var lastX = 0f
     private var lastY = 0f
     private var dragging = false
+    private var activePointerId = MotionEvent.INVALID_POINTER_ID
 
     val canUndo: Boolean get() = ops.isNotEmpty()
     val canRedo: Boolean get() = redoStack.isNotEmpty()
@@ -67,21 +81,46 @@ class PaintCanvasView @JvmOverloads constructor(
         val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         bitmap = bmp
         bitmapCanvas = Canvas(bmp)
+        dropCheckpointsAfter(0)
         replayAll()
     }
 
     private fun replayAll() {
         val bmp = bitmap ?: return
         val canvas = bitmapCanvas ?: return
-        canvas.drawColor(paperColor)
-        basePicture?.let { canvas.drawBitmap(it, null, RectF(0f, 0f, width.toFloat(), height.toFloat()), null) }
-        for (op in ops) op.apply(canvas, bmp)
+        val from = checkpoints.lastOrNull()
+        if (from != null) {
+            canvas.drawBitmap(from.bitmap, 0f, 0f, null)
+        } else {
+            canvas.drawColor(paperColor)
+            basePicture?.let { canvas.drawBitmap(it, null, RectF(0f, 0f, width.toFloat(), height.toFloat()), null) }
+        }
+        for (i in (from?.opCount ?: 0) until ops.size) ops[i].apply(canvas, bmp)
         invalidate()
+    }
+
+    /** Snapshots the bitmap once enough ops have piled up since the last snapshot. */
+    private fun maybeCheckpoint() {
+        val bmp = bitmap ?: return
+        val since = ops.size - (checkpoints.lastOrNull()?.opCount ?: 0)
+        if (since < CHECKPOINT_INTERVAL) return
+        checkpoints += Checkpoint(ops.size, bmp.copy(Bitmap.Config.ARGB_8888, false))
+        while (checkpoints.size > MAX_CHECKPOINTS) {
+            checkpoints.removeAt(0).bitmap.recycle()
+        }
+    }
+
+    /** Undo invalidates every snapshot taken past the new end of the op list. */
+    private fun dropCheckpointsAfter(opCount: Int) {
+        while (checkpoints.isNotEmpty() && checkpoints.last().opCount > opCount) {
+            checkpoints.removeAt(checkpoints.lastIndex).bitmap.recycle()
+        }
     }
 
     /** Puts a saved picture back on the paper; safe to call before the view is laid out. */
     fun restorePicture(picture: Bitmap) {
         basePicture = picture
+        dropCheckpointsAfter(0)
         replayAll()
     }
 
@@ -91,6 +130,7 @@ class PaintCanvasView @JvmOverloads constructor(
         ops.add(op)
         redoStack.clear()
         op.apply(canvas, bmp)
+        maybeCheckpoint()
         invalidate()
         onHistoryChanged?.invoke()
     }
@@ -109,12 +149,12 @@ class PaintCanvasView @JvmOverloads constructor(
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        val x = event.x
-        val y = event.y
-
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 parent?.requestDisallowInterceptTouchEvent(true)
+                activePointerId = event.getPointerId(0)
+                val x = event.x
+                val y = event.y
                 downX = x; downY = y; lastX = x; lastY = y
                 dragging = true
                 when (tool) {
@@ -125,8 +165,16 @@ class PaintCanvasView @JvmOverloads constructor(
                 return true
             }
 
+            // A second finger — usually the palm of the hand holding the phone — must
+            // not steal the stroke. Only the pointer that started the gesture draws.
+            MotionEvent.ACTION_POINTER_DOWN -> return true
+
             MotionEvent.ACTION_MOVE -> {
                 if (!dragging) return true
+                val index = event.findPointerIndex(activePointerId)
+                if (index < 0) return true
+                val x = event.getX(index)
+                val y = event.getY(index)
                 when (tool) {
                     Tool.BRUSH, Tool.ERASER -> {
                         // Quadratic smoothing through the midpoint keeps freehand lines
@@ -140,20 +188,41 @@ class PaintCanvasView @JvmOverloads constructor(
                 return true
             }
 
+            MotionEvent.ACTION_POINTER_UP -> {
+                // The drawing finger lifted while another is still down. End the gesture
+                // here: without this the stroke stayed live and the next MOVE snapped it
+                // across the paper to whichever pointer became index 0.
+                if (event.getPointerId(event.actionIndex) != activePointerId) return true
+                endGesture(event.getX(event.actionIndex), event.getY(event.actionIndex))
+                return true
+            }
+
             MotionEvent.ACTION_UP -> {
-                dragging = false
-                finishGesture(x, y)
+                if (!dragging) return true
+                val index = event.findPointerIndex(activePointerId)
+                if (index < 0) cancelGesture() else endGesture(event.getX(index), event.getY(index))
                 return true
             }
 
             MotionEvent.ACTION_CANCEL -> {
-                dragging = false
-                activePath = null
-                invalidate()
+                cancelGesture()
                 return true
             }
         }
         return super.onTouchEvent(event)
+    }
+
+    private fun endGesture(x: Float, y: Float) {
+        dragging = false
+        activePointerId = MotionEvent.INVALID_POINTER_ID
+        finishGesture(x, y)
+    }
+
+    private fun cancelGesture() {
+        dragging = false
+        activePointerId = MotionEvent.INVALID_POINTER_ID
+        activePath = null
+        invalidate()
     }
 
     private fun finishGesture(x: Float, y: Float) {
@@ -200,6 +269,7 @@ class PaintCanvasView @JvmOverloads constructor(
     fun undo() {
         if (ops.isEmpty()) return
         redoStack.add(ops.removeAt(ops.lastIndex))
+        dropCheckpointsAfter(ops.size)
         replayAll()
         onHistoryChanged?.invoke()
     }
@@ -211,6 +281,7 @@ class PaintCanvasView @JvmOverloads constructor(
         val bmp = bitmap ?: return
         val canvas = bitmapCanvas ?: return
         op.apply(canvas, bmp)
+        maybeCheckpoint()
         invalidate()
         onHistoryChanged?.invoke()
     }
@@ -225,5 +296,7 @@ class PaintCanvasView @JvmOverloads constructor(
 
     private companion object {
         const val TAP_SLOP = 6f
+        const val CHECKPOINT_INTERVAL = 12
+        const val MAX_CHECKPOINTS = 2
     }
 }

@@ -387,7 +387,17 @@ class MainActivity : AppCompatActivity() {
         }
         undoButton = chromeButton(R.drawable.ic_undo).apply { setOnClickListener { binding.paintView.undo() } }
         redoButton = chromeButton(R.drawable.ic_redo).apply { setOnClickListener { binding.paintView.redo() } }
-        val clear = chromeButton(R.drawable.ic_clear).apply { setOnClickListener { binding.paintView.clearPaper() } }
+        // A single tap here used to wipe the picture. Undo brings it back, but a
+        // child does not know that, so wiping is a deliberate hold — the same
+        // press-and-hold the lock corner already uses.
+        val clear = chromeButton(R.drawable.ic_clear).apply {
+            setOnClickListener { toast(getString(R.string.clear_hold_hint)) }
+            setOnLongClickListener {
+                binding.paintView.clearPaper()
+                toast(getString(R.string.cleared))
+                true
+            }
+        }
         saveButton = chromeButton(R.drawable.ic_save).apply { setOnClickListener { onSaveClicked() } }
         kidModeButton = chromeButton(R.drawable.ic_lock).apply {
             setOnClickListener { showKidModeSetup(kidMode) { applyKidMode(started = true) } }
