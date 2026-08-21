@@ -5,6 +5,8 @@ import android.content.Context
 import android.text.InputType
 import android.view.Gravity
 import android.view.View
+import android.view.WindowManager
+import android.view.inputmethod.InputMethodManager
 import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
@@ -204,7 +206,15 @@ private fun Activity.runUnlockStep(
         .setNegativeButton(R.string.cancel, null)
         .create()
 
+    // Keyboard up with the dialog, same as the text tool: the parent is answering
+    // this one-handed while a child waits.
+    field.requestFocus()
+    dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE)
     dialog.show()
+    field.post {
+        getSystemService(InputMethodManager::class.java)
+            ?.showSoftInput(field, InputMethodManager.SHOW_IMPLICIT)
+    }
     dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
         val entered = field.text.toString().trim()
         val correct = if (step == STEP_MATH) entered.toIntOrNull() == a * b else entered == state.pin
