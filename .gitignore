@@ -1,13 +1,32 @@
-.claude/outbox/
-.claude/inbox/
-.usmc/
-*.iml
+# Gradle and build output
 .gradle/
-/local.properties
+.kotlin/
+**/build/
+local.properties
+
+# IDE
 /.idea/
-.DS_Store
-/build
+*.iml
 /captures
 .externalNativeBuild
 .cxx
-app/build/
+
+# Build artifacts — the APK is a build product, never a commit
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# Signing material
+*.jks
+*.keystore
+keystore.properties
+
+# OS
+.DS_Store
+
+# Phone-driven workflow, see CLAUDE.md: outbox is for humans to look at,
+# inbox is uploads from the phone, .usmc is daemon-written repo state.
+.claude/outbox/
+.claude/inbox/
+.usmc/
