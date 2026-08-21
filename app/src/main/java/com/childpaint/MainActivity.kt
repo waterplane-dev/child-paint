@@ -3,6 +3,7 @@ package com.childpaint
 import android.Manifest
 import android.content.ContentValues
 import android.content.pm.PackageManager
+import android.content.res.ColorStateList
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
@@ -13,14 +14,13 @@ import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
-import android.util.TypedValue
-import android.view.Gravity
 import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
 import androidx.activity.OnBackPressedCallback
 import android.widget.EditText
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
@@ -29,6 +29,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import com.childpaint.databinding.ActivityMainBinding
 import java.io.File
 import java.io.FileOutputStream
@@ -39,12 +42,12 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
 
     private val colorSwatches = mutableListOf<Pair<Int, View>>()
-    private val toolButtons = mutableListOf<Pair<Tool, TextView>>()
-    private lateinit var fillToggle: TextView
-    private lateinit var undoButton: TextView
-    private lateinit var redoButton: TextView
-    private lateinit var saveButton: TextView
-    private lateinit var kidModeButton: TextView
+    private val toolButtons = mutableListOf<Pair<Tool, ImageView>>()
+    private lateinit var fillToggle: ImageView
+    private lateinit var undoButton: ImageView
+    private lateinit var redoButton: ImageView
+    private lateinit var saveButton: ImageView
+    private lateinit var kidModeButton: ImageView
 
     private val kidMode by lazy { KidModeState(this) }
     private val autosaveExecutor = Executors.newSingleThreadExecutor()
@@ -69,6 +72,7 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        applyEdgeToEdgeInsets()
 
         buildColorRow()
         buildToolRow()
@@ -290,6 +294,23 @@ class MainActivity : AppCompatActivity() {
         binding.paintView.restorePicture(saved)
     }
 
+    /**
+     * Draws under the system bars and pads the content back out by the insets.
+     *
+     * Without this, hiding the bars in kid mode leaves the strip they occupied
+     * painted black by the system, which reads as a broken screen next to the
+     * paper. Edge-to-edge means that strip is simply part of the app, and when the
+     * bars come back in parent mode the insets push the toolbar clear of them.
+     */
+    private fun applyEdgeToEdgeInsets() {
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        ViewCompat.setOnApplyWindowInsetsListener(binding.root) { view, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+            insets
+        }
+    }
+
     /** Slider is non-linear so the thin end has usable resolution for detail work. */
     private fun progressToWidth(progress: Int): Float = 2f + (progress / 100f) * (progress / 100f) * 78f
 
@@ -303,6 +324,15 @@ class MainActivity : AppCompatActivity() {
             LinearLayout.LayoutParams.WRAP_CONTENT
         )
     }
+
+    /** Square cells size themselves; [SquareView] derives the height from the width. */
+    private fun weightedCell() =
+        LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+            marginStart = dp(3)
+            marginEnd = dp(3)
+            topMargin = dp(3)
+            bottomMargin = dp(3)
+        }
 
     private fun cellParams(heightDp: Int) =
         LinearLayout.LayoutParams(0, dp(heightDp), 1f).apply {
@@ -319,8 +349,8 @@ class MainActivity : AppCompatActivity() {
                 row = gridRow()
                 binding.colorGrid.addView(row)
             }
-            val swatch = View(this).apply {
-                layoutParams = cellParams(38)
+            val swatch = SquareView(this).apply {
+                layoutParams = weightedCell()
                 setOnClickListener { selectColor(color) }
             }
             colorSwatches += color to swatch
@@ -330,12 +360,12 @@ class MainActivity : AppCompatActivity() {
 
     private fun buildToolRow() {
         var row = gridRow()
-        TOOLS.forEachIndexed { index, (tool, label) ->
+        TOOLS.forEachIndexed { index, (tool, icon) ->
             if (index % TOOLS_PER_ROW == 0) {
                 row = gridRow()
                 binding.toolGrid.addView(row)
             }
-            val button = chromeButton(label).apply {
+            val button = chromeButton(icon).apply {
                 layoutParams = cellParams(52)
                 setOnClickListener { selectTool(tool) }
             }
@@ -345,18 +375,21 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun buildActionRow() {
-        fillToggle = chromeButton(OUTLINE_ICON).apply {
+        fillToggle = chromeButton(R.drawable.ic_shape_outline).apply {
             setOnClickListener {
                 binding.paintView.fillShapes = !binding.paintView.fillShapes
-                text = if (binding.paintView.fillShapes) FILLED_ICON else OUTLINE_ICON
+                setImageResource(
+                    if (binding.paintView.fillShapes) R.drawable.ic_shape_filled
+                    else R.drawable.ic_shape_outline
+                )
                 setSelectedLook(binding.paintView.fillShapes)
             }
         }
-        undoButton = chromeButton("\u21B6").apply { setOnClickListener { binding.paintView.undo() } }
-        redoButton = chromeButton("\u21B7").apply { setOnClickListener { binding.paintView.redo() } }
-        val clear = chromeButton("\uD83D\uDDD1").apply { setOnClickListener { binding.paintView.clearPaper() } }
-        saveButton = chromeButton("\uD83D\uDCBE").apply { setOnClickListener { onSaveClicked() } }
-        kidModeButton = chromeButton("\uD83D\uDD12").apply {
+        undoButton = chromeButton(R.drawable.ic_undo).apply { setOnClickListener { binding.paintView.undo() } }
+        redoButton = chromeButton(R.drawable.ic_redo).apply { setOnClickListener { binding.paintView.redo() } }
+        val clear = chromeButton(R.drawable.ic_clear).apply { setOnClickListener { binding.paintView.clearPaper() } }
+        saveButton = chromeButton(R.drawable.ic_save).apply { setOnClickListener { onSaveClicked() } }
+        kidModeButton = chromeButton(R.drawable.ic_lock).apply {
             setOnClickListener { showKidModeSetup(kidMode) { applyKidMode(started = true) } }
         }
 
@@ -367,16 +400,19 @@ class MainActivity : AppCompatActivity() {
         fillToggle.setSelectedLook(false)
     }
 
-    private fun chromeButton(label: String): TextView = TextView(this).apply {
-        text = label
-        gravity = Gravity.CENTER
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
+    /** One button style for every tool and action, so nothing looks out of place. */
+    private fun chromeButton(iconRes: Int): ImageView = ImageView(this).apply {
+        setImageResource(iconRes)
+        imageTintList = ColorStateList.valueOf(ICON_TINT)
+        scaleType = ImageView.ScaleType.FIT_CENTER
+        val inset = dp(13)
+        setPadding(inset, inset, inset, inset)
         isClickable = true
         isFocusable = true
         setSelectedLook(false)
     }
 
-    private fun TextView.setSelectedLook(selected: Boolean) {
+    private fun View.setSelectedLook(selected: Boolean) {
         background = GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
             cornerRadius = dp(14).toFloat()
@@ -518,11 +554,11 @@ class MainActivity : AppCompatActivity() {
         const val AUTOSAVE_NAME = "canvas.png"
         const val AUTOSAVE_DELAY_MS = 1200L
 
+        /** Every toolbar glyph is tinted this, so no icon reads as a stray emoji. */
+        const val ICON_TINT = 0xFF4A3B2E.toInt()
+
         const val COLORS_PER_ROW = 8
         const val TOOLS_PER_ROW = 5
-
-        const val OUTLINE_ICON = "▭"
-        const val FILLED_ICON = "▬"
 
         val PALETTE = intArrayOf(
             0xFF000000.toInt(), 0xFF7A7A7A.toInt(), 0xFFFFFFFF.toInt(), 0xFF8B5A2B.toInt(),
@@ -532,16 +568,16 @@ class MainActivity : AppCompatActivity() {
         )
 
         val TOOLS = listOf(
-            Tool.BRUSH to "✏",
-            Tool.FILL to "🪣",
-            Tool.ERASER to "🧽",
-            Tool.TEXT to "T",
-            Tool.LINE to "╱",
-            Tool.RECT to "□",
-            Tool.OVAL to "○",
-            Tool.TRIANGLE to "△",
-            Tool.STAR to "☆",
-            Tool.HEART to "♡"
+            Tool.BRUSH to R.drawable.ic_brush,
+            Tool.FILL to R.drawable.ic_bucket,
+            Tool.ERASER to R.drawable.ic_eraser,
+            Tool.TEXT to R.drawable.ic_text,
+            Tool.LINE to R.drawable.ic_line,
+            Tool.RECT to R.drawable.ic_rect,
+            Tool.OVAL to R.drawable.ic_oval,
+            Tool.TRIANGLE to R.drawable.ic_triangle,
+            Tool.STAR to R.drawable.ic_star,
+            Tool.HEART to R.drawable.ic_heart
         )
     }
 }

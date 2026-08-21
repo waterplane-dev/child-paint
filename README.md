@@ -8,7 +8,7 @@ A drawing app for a small child, built for a phone.
 
 - **Draw** — freehand brush with a size slider, and an eraser.
 - **Shapes** — line, rectangle, oval, triangle, star, heart. Drag to size them;
-  the ▭/▬ button switches between outline and filled.
+  the outline/filled button switches between the two.
 - **Fill** — a paint bucket that floods any enclosed area, including areas
   enclosed by a wobbly freehand line.
 - **Text** — tap the paper, type a word, and it lands where you tapped in the
@@ -21,12 +21,12 @@ lose the drawing.
 
 ## Parent mode and kid mode
 
-The app starts in **parent mode** — the full toolbar above, plus a 🔒 button that
-hands the phone over to the child.
+The app starts in **parent mode** — the full toolbar above, plus a padlock button
+that hands the phone over to the child.
 
 **Kid mode** is for leaving a child alone with the phone:
 
-- **One canvas, no saving.** The 💾 button is hidden and nothing is written to the
+- **One canvas, no saving.** The save button is hidden and nothing is written to the
   phone's gallery. There is one drawing, and it is kept automatically.
 - **No way out.** The app is pinned to the screen, system bars are hidden, and
   Back and Home do nothing.
@@ -34,7 +34,7 @@ hands the phone over to the child.
   minutes, or no limit. A countdown badge turns orange at 5 minutes left and red
   at 1 minute. When it runs out, a full-screen overlay blocks the paper and the
   tools until a grown-up unlocks it — the drawing is kept, not thrown away.
-- **A guarded way back.** Hold the 🔒 in the corner. Unlocking asks a
+- **A guarded way back.** Hold the padlock in the corner. Unlocking asks a
   multiplication question (a two-digit number times a single digit) and then a
   4-digit PIN. Either barrier can be switched off when kid mode is started.
 

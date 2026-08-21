@@ -12,7 +12,7 @@
     <string name="time_up_glyph">\u23F3</string>
     <string name="time_up_title">Time is up!</string>
     <string name="time_up_hint">The drawing is safe. A grown-up can give you more time.</string>
-    <string name="grown_ups">\uD83D\uDD12 Grown-ups</string>
+    <string name="grown_ups">Grown-ups</string>
 
     <string name="kid_setup_title">Start kid mode</string>
     <string name="kid_setup_explainer">One canvas, no saving, and the app cannot be left until you unlock it.</string>

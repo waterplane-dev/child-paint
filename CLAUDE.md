@@ -39,9 +39,16 @@ works here; the Homebrew JDK 25 on PATH is too new for AGP 8.7).
   first blended pixel and leave a halo.
 - `KidModeState.kt` — the unattended-child session, persisted in SharedPreferences.
 - `KidModeDialogs.kt` — the parent's setup dialog and the guarded unlock flow.
+- `SquareView.kt` — a view that is as tall as it is wide. The colour swatches are
+  weight-laid-out, so a fixed height made them ellipses on most screen widths.
 - `MainActivity.kt` — builds the toolbar in code (weighted grid rows, so it fits
   any screen width), owns colour/tool selection, the text dialog, autosave, and
   save-to-gallery.
+
+Every toolbar glyph is a vector drawable in `res/drawable/ic_*.xml`, tinted with
+one colour. They used to be emoji, which rendered as a mix of full-colour glyphs
+(bucket, sponge, floppy) and monochrome symbols (□ ○ △) — the set never read as
+one toolbar. Do not reintroduce emoji here.
 
 ## Things that will bite you
 
@@ -58,6 +65,10 @@ works here; the Homebrew JDK 25 on PATH is too new for AGP 8.7).
   `KidModeState` in `onStart`, so a force-stop re-enters kid mode instead of
   escaping it, and the timer is an absolute deadline rather than a countdown so
   the clock keeps running while the app is dead.
+- The window is edge-to-edge (`setDecorFitsSystemWindows(false)` plus inset
+  padding on the root, and `windowLayoutInDisplayCutoutMode=shortEdges` in
+  `values-v27`). Both parts are needed: without the cutout mode the notch strip
+  stays black once kid mode hides the system bars.
 - `startLockTask()` is best-effort. Without device-owner provisioning Android
   shows a confirmation prompt and lets the user unpin by swiping up and holding.
   The persisted session is what actually holds the line; pinning just raises the

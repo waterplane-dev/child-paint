@@ -83,16 +83,16 @@
         android:visibility="gone"
         />
 
-    <TextView
+    <ImageView
         android:id="@+id/lockCorner"
-        android:layout_width="44dp"
-        android:layout_height="44dp"
+        android:layout_width="46dp"
+        android:layout_height="46dp"
         android:layout_gravity="top|start"
         android:layout_margin="8dp"
-        android:gravity="center"
-        android:textSize="18sp"
-        android:alpha="0.45"
-        android:text="@string/lock_glyph"
+        android:padding="11dp"
+        android:alpha="0.4"
+        android:src="@drawable/ic_lock"
+        android:contentDescription="@string/unlock_title"
         android:visibility="gone" />
 
     <LinearLayout
@@ -107,11 +107,12 @@
         android:padding="32dp"
         android:visibility="gone">
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/time_up_glyph"
-            android:textSize="64sp" />
+        <ImageView
+            android:layout_width="72dp"
+            android:layout_height="72dp"
+            android:src="@drawable/ic_lock"
+            android:alpha="0.85"
+            android:contentDescription="@null" />
 
         <TextView
             android:layout_width="wrap_content"
@@ -139,6 +140,9 @@
             android:paddingHorizontal="24dp"
             android:paddingVertical="14dp"
             android:text="@string/grown_ups"
+            android:drawableStart="@drawable/ic_lock"
+            android:drawablePadding="10dp"
+            android:drawableTint="#FFFFFFFF"
             android:textColor="#FFFFFFFF"
             android:textSize="16sp" />
     </LinearLayout>
