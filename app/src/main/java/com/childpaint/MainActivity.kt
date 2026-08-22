@@ -218,15 +218,7 @@ class MainActivity : AppCompatActivity() {
             else -> 0xFF2E7D32.toInt()
         }
 
-        binding.timerHud.apply {
-            visibility = View.VISIBLE
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
-                cornerRadius = dp(16).toFloat()
-                setColor(0xE6FFFFFF.toInt())
-                setStroke(dp(2), accent)
-            }
-        }
+        binding.timerHud.visibility = View.VISIBLE
         binding.timerBar.apply {
             // Scaled to a 1000-step max so the bar still creeps visibly on a long
             // session; a per-second max would jump in whole percent steps.
@@ -237,6 +229,12 @@ class MainActivity : AppCompatActivity() {
         binding.lastMinuteLabel.apply {
             visibility = if (remaining <= 60) View.VISIBLE else View.GONE
             setTextColor(accent)
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(20).toFloat()
+                setColor(0xF2FFFFFF.toInt())
+                setStroke(dp(2), accent)
+            }
         }
     }
 

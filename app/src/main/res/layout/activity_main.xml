@@ -70,27 +70,25 @@
 
     <!-- Kid-mode chrome. All gone in parent mode; the overlay sits above the
          toolbar too, so an expired session blocks the tools as well as the paper. -->
-    <!-- Time left is a draining bar, not a clock. A ticking mm:ss is a stress
-         machine for a child who can read it and meaningless to one who cannot;
-         a bar just gets shorter. The last minute also says so in words, for the
-         grown-up in the room. -->
+    <!-- Time left is a draining bar across the top of the paper, not a clock. A
+         ticking mm:ss is a stress machine for a child who can read it and
+         meaningless to one who cannot; a bar just gets shorter. It spans the full
+         width so it reads from across the room, and the last minute also says so
+         in words for the grown-up. -->
     <LinearLayout
         android:id="@+id/timerHud"
-        android:layout_width="wrap_content"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_gravity="top|end"
-        android:layout_margin="12dp"
+        android:layout_gravity="top"
         android:orientation="vertical"
-        android:gravity="end"
-        android:paddingHorizontal="12dp"
-        android:paddingVertical="10dp"
+        android:gravity="center_horizontal"
         android:visibility="gone">
 
         <ProgressBar
             android:id="@+id/timerBar"
             style="?android:attr/progressBarStyleHorizontal"
-            android:layout_width="120dp"
-            android:layout_height="12dp"
+            android:layout_width="match_parent"
+            android:layout_height="16dp"
             android:max="1000"
             android:progress="1000" />
 
@@ -98,9 +96,11 @@
             android:id="@+id/lastMinuteLabel"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
+            android:layout_marginTop="8dp"
+            android:paddingHorizontal="16dp"
+            android:paddingVertical="6dp"
             android:text="@string/last_minute"
-            android:textSize="13sp"
+            android:textSize="15sp"
             android:textStyle="bold"
             android:visibility="gone" />
     </LinearLayout>
@@ -111,6 +111,7 @@
         android:layout_height="46dp"
         android:layout_gravity="top|start"
         android:layout_margin="8dp"
+        android:layout_marginTop="28dp"
         android:padding="11dp"
         android:alpha="0.4"
         android:src="@drawable/ic_lock"
