@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Paint</string>
+    <string name="app_name">Little Painter</string>
     <string name="text_dialog_title">What should it say?</string>
     <string name="ok">OK</string>
     <string name="cancel">Cancel</string>
@@ -18,8 +18,16 @@
     <string name="grown_ups">Grown-ups</string>
 
     <string name="kid_setup_title">Start kid mode</string>
-    <string name="kid_setup_explainer">One canvas, no saving, and the app cannot be left until you unlock it.</string>
+    <string name="kid_setup_explainer">One canvas, no saving. Home and Back stop working, and closing the app comes straight back here with the timer still running.</string>
     <string name="kid_setup_duration">How long?</string>
+    <string name="duration_5_min">5 min</string>
+    <string name="duration_15_min">15 min</string>
+    <string name="duration_30_min">30 min</string>
+    <string name="duration_45_min">45 min</string>
+    <string name="duration_1_hour">1 hour</string>
+    <string name="duration_2_hours">2 hours</string>
+    <string name="duration_no_limit">No limit</string>
+    <string name="duration_custom">Custom\u2026</string>
     <string name="kid_setup_pin_hint">4-digit PIN</string>
     <string name="kid_setup_pin_error">Enter exactly 4 digits</string>
     <string name="kid_setup_custom_hint">Minutes (1\u20131440)</string>
@@ -32,8 +40,12 @@
     <string name="pin_hold_hint">Press and hold to unlock</string>
 
     <string name="unlock_title">Grown-ups only</string>
-    <string name="unlock_math">What is %1$d \u00D7 %2$d?</string>
+    <string name="unlock_math">What is %1$d + %2$d?</string>
     <string name="unlock_pin">Enter the PIN</string>
     <string name="unlock_confirm">Leave kid mode?</string>
     <string name="unlock_wrong">Not right</string>
+    <string name="unlock_blocked_title">Too many tries</string>
+    <string name="unlock_blocked_minutes">Wait %1$d more minutes before trying again.</string>
+    <string name="unlock_blocked_seconds">Wait %1$d more seconds before trying again.</string>
+    <string name="unlock_hold_hint">Press and hold the lock to leave kid mode</string>
 </resources>

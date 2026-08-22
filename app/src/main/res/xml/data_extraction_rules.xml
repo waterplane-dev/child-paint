@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 12+ equivalent of backup_rules.xml. Both sections exclude the
+  kid-mode preferences: the parental PIN is stored there in plain text and must
+  not travel off the device, whether by cloud backup or by device-to-device
+  transfer. Everything else, the autosaved canvas included, is carried over.
+
+  A phone restored from backup therefore starts in parent mode with no saved
+  PIN, which is the correct outcome: the parent sets kid mode up again.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="kid_mode.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="kid_mode.xml" />
+    </device-transfer>
+</data-extraction-rules>

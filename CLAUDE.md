@@ -69,6 +69,14 @@ one toolbar. Do not reintroduce emoji here.
   padding on the root, and `windowLayoutInDisplayCutoutMode=shortEdges` in
   `values-v27`). Both parts are needed: without the cutout mode the notch strip
   stays black once kid mode hides the system bars.
+- The unlock lockout (`KidModeState.registerFailedUnlock`) is deliberately
+  charged only to the **last** step of the unlock — the PIN when one is set. If a
+  wrong sum counted, a child jabbing at the maths question would lock the parent
+  out for five minutes at a time, which is a denial of service against the person
+  the feature exists to serve.
+- The lockout deadline is a persisted wall-clock instant, like the session
+  deadline. Anything held only in memory is reset by killing the app, which is
+  precisely the move this is meant to survive.
 - `startLockTask()` is best-effort. Without device-owner provisioning Android
   shows a confirmation prompt and lets the user unpin by swiping up and holding.
   The persisted session is what actually holds the line; pinning just raises the

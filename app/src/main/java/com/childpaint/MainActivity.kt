@@ -94,8 +94,6 @@ class MainActivity : AppCompatActivity() {
             override fun onStopTrackingTouch(bar: SeekBar) = Unit
         })
 
-        binding.lockCorner.setOnLongClickListener { attemptUnlock(); true }
-        binding.lockCorner.setOnClickListener { toast(getString(R.string.pin_hold_hint)) }
         binding.expiredUnlock.setOnClickListener { attemptUnlock() }
 
         // In kid mode Back must do nothing at all: the only way out is the guarded
@@ -160,8 +158,20 @@ class MainActivity : AppCompatActivity() {
 
         // No saving in kid mode: one canvas, and nothing lands in the phone gallery.
         saveButton.visibility = if (active) View.GONE else View.VISIBLE
-        kidModeButton.visibility = if (active) View.GONE else View.VISIBLE
-        binding.lockCorner.visibility = if (active) View.VISIBLE else View.GONE
+
+        // The lock lives in the toolbar in both modes. It used to be a translucent
+        // badge floating over the paper, which vanished the moment a child painted
+        // something dark under it — exactly when a grown-up needs to find it.
+        // Against the toolbar it is always legible, and a hold rather than a tap
+        // keeps a child from opening the dialog by accident.
+        if (active) {
+            kidModeButton.setOnClickListener { toast(getString(R.string.unlock_hold_hint)) }
+            kidModeButton.setOnLongClickListener { attemptUnlock(); true }
+        } else {
+            kidModeButton.setOnClickListener { showKidModeSetup(kidMode) { applyKidMode(started = true) } }
+            kidModeButton.setOnLongClickListener(null)
+            kidModeButton.isLongClickable = false
+        }
 
         if (active) {
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -398,9 +408,9 @@ class MainActivity : AppCompatActivity() {
             }
         }
         saveButton = chromeButton(R.drawable.ic_save).apply { setOnClickListener { onSaveClicked() } }
-        kidModeButton = chromeButton(R.drawable.ic_lock).apply {
-            setOnClickListener { showKidModeSetup(kidMode) { applyKidMode(started = true) } }
-        }
+        // Listeners are assigned in applyKidMode: this button means "hand over the
+        // phone" in parent mode and "give it back" in kid mode.
+        kidModeButton = chromeButton(R.drawable.ic_lock)
 
         for (b in listOf(fillToggle, undoButton, redoButton, clear, saveButton, kidModeButton)) {
             b.layoutParams = cellParams(52)
@@ -535,7 +545,7 @@ class MainActivity : AppCompatActivity() {
         val values = ContentValues().apply {
             put(MediaStore.Images.Media.DISPLAY_NAME, name)
             put(MediaStore.Images.Media.MIME_TYPE, "image/png")
-            put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/Paint")
+            put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/$GALLERY_FOLDER")
         }
         val uri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
             ?: return false
@@ -552,7 +562,7 @@ class MainActivity : AppCompatActivity() {
     private fun saveToLegacyPictures(bitmap: Bitmap, name: String): Boolean = try {
         val dir = File(
             Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
-            "Paint"
+            GALLERY_FOLDER
         )
         dir.mkdirs()
         val file = File(dir, name)
@@ -571,6 +581,9 @@ class MainActivity : AppCompatActivity() {
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     private companion object {
+        /** Album the save button writes into, matching the app's public name. */
+        const val GALLERY_FOLDER = "Little Painter"
+
         const val AUTOSAVE_NAME = "canvas.png"
         const val AUTOSAVE_DELAY_MS = 1200L
 

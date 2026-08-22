@@ -14,16 +14,22 @@ import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import kotlin.random.Random
 
-/** Preset session lengths offered to the parent; 0 means no limit. */
+/**
+ * Preset session lengths offered to the parent; 0 means no limit.
+ *
+ * Labels are string resources rather than literals so the dialog translates with
+ * the rest of the app — this list is a top-level val, so it has no Context to
+ * resolve them with and the lookup happens where the dialog is built.
+ */
 private val DURATION_CHOICES = listOf(
-    5 to "5 min",
-    15 to "15 min",
-    30 to "30 min",
-    45 to "45 min",
-    60 to "1 hour",
-    120 to "2 hours",
-    0 to "No limit",
-    CUSTOM_MINUTES to "Custom\u2026"
+    5 to R.string.duration_5_min,
+    15 to R.string.duration_15_min,
+    30 to R.string.duration_30_min,
+    45 to R.string.duration_45_min,
+    60 to R.string.duration_1_hour,
+    120 to R.string.duration_2_hours,
+    0 to R.string.duration_no_limit,
+    CUSTOM_MINUTES to R.string.duration_custom
 )
 
 /** Sentinel for the duration entry that reveals a free-text minutes field. */
@@ -66,9 +72,9 @@ fun Activity.showKidModeSetup(state: KidModeState, onStart: () -> Unit) {
     // Two per row keeps the dialog compact without a chip dependency.
     DURATION_CHOICES.chunked(2).forEach { pair ->
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        for ((minutes, label) in pair) {
+        for ((minutes, labelRes) in pair) {
             val button = TextView(this).apply {
-                text = label
+                text = getString(labelRes)
                 gravity = Gravity.CENTER
                 setPadding(dpOf(8), dpOf(12), dpOf(8), dpOf(12))
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
@@ -146,11 +152,17 @@ fun Activity.showKidModeSetup(state: KidModeState, onStart: () -> Unit) {
 }
 
 /**
- * The way out of kid mode. Barriers are asked one at a time: a multiplication a
- * young child cannot do in their head, then the parent's PIN. Both are optional
- * individually, but with neither enabled this degrades to a plain confirmation.
+ * The way out of kid mode. Barriers are asked one at a time: a sum a young child
+ * cannot do in their head, then the parent's PIN. Both are optional individually,
+ * but with neither enabled this degrades to a plain confirmation. Repeated wrong
+ * answers at the last barrier trip the lockout in [KidModeState].
  */
 fun Activity.showUnlockDialog(state: KidModeState, onUnlocked: () -> Unit) {
+    val blocked = state.unlockBlockedSeconds
+    if (blocked > 0) {
+        showLockedOut(blocked)
+        return
+    }
     val steps = buildList {
         if (state.requireMath) add(STEP_MATH)
         if (state.requirePin && !state.pin.isNullOrEmpty()) add(STEP_PIN)
@@ -185,13 +197,17 @@ private fun Activity.runUnlockStep(
         return
     }
 
-    // Single-digit times table: instant for an adult, still well out of reach for
-    // the age this app is aimed at. Two-digit factors only made the parent do
-    // arithmetic one-handed while holding a child.
-    val a = Random.nextInt(3, 10)
-    val b = Random.nextInt(3, 10)
+    // Two two-digit numbers chosen so no column carries: 34 + 25, never 38 + 27.
+    // An adult reads the answer off the page; a pre-schooler cannot add tens at
+    // all. Multiplication tables were the thing the parent had to stop and think
+    // about, and thinking is what this question must not require of them.
+    val a = Random.nextInt(1, 5) * 10 + Random.nextInt(1, 5)
+    val b = Random.nextInt(1, 5) * 10 + Random.nextInt(1, 5)
 
     val prompt = if (step == STEP_MATH) getString(R.string.unlock_math, a, b) else getString(R.string.unlock_pin)
+    // Only the last barrier is rate limited. If a wrong sum counted, a child
+    // hammering the maths question could lock the parent out of their own phone.
+    val countsTowardLockout = index == steps.lastIndex
     val field = EditText(this).apply {
         inputType = InputType.TYPE_CLASS_NUMBER or
             (if (step == STEP_PIN) InputType.TYPE_NUMBER_VARIATION_PASSWORD else 0)
@@ -217,15 +233,35 @@ private fun Activity.runUnlockStep(
     }
     dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
         val entered = field.text.toString().trim()
-        val correct = if (step == STEP_MATH) entered.toIntOrNull() == a * b else entered == state.pin
+        val correct = if (step == STEP_MATH) entered.toIntOrNull() == a + b else entered == state.pin
         if (!correct) {
             field.text.clear()
-            field.error = getString(R.string.unlock_wrong)
+            if (countsTowardLockout && state.registerFailedUnlock()) {
+                dialog.dismiss()
+                showLockedOut(state.unlockBlockedSeconds)
+            } else {
+                field.error = getString(R.string.unlock_wrong)
+            }
             return@setOnClickListener
         }
         dialog.dismiss()
+        if (index == steps.lastIndex) state.clearUnlockFailures()
         runUnlockStep(state, steps, index + 1, onUnlocked)
     }
+}
+
+/** Tells whoever is holding the phone how long the lockout has left to run. */
+private fun Activity.showLockedOut(seconds: Long) {
+    val message = if (seconds >= 60) {
+        getString(R.string.unlock_blocked_minutes, ((seconds + 59) / 60).toInt())
+    } else {
+        getString(R.string.unlock_blocked_seconds, seconds.toInt())
+    }
+    AlertDialog.Builder(this)
+        .setTitle(R.string.unlock_blocked_title)
+        .setMessage(message)
+        .setPositiveButton(R.string.ok, null)
+        .show()
 }
 
 private fun Context.dpOf(value: Int): Int = (value * resources.displayMetrics.density).toInt()

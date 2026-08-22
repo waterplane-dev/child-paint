@@ -27,6 +27,21 @@ class KidModeState(context: Context) {
     val requireMath: Boolean get() = prefs.getBoolean(KEY_REQUIRE_MATH, true)
     val totalSeconds: Int get() = prefs.getInt(KEY_TOTAL_SECONDS, 0)
 
+    /**
+     * Seconds until unlock attempts are accepted again, 0 when not blocked.
+     *
+     * Stored as a wall-clock instant for the same reason the session deadline is:
+     * a child who works out that killing the app resets the counter has broken the
+     * limit, so the lockout has to outlive the process.
+     */
+    val unlockBlockedSeconds: Long
+        get() {
+            val until = prefs.getLong(KEY_BLOCKED_UNTIL, 0L)
+            if (until <= 0L) return 0L
+            val left = (until - System.currentTimeMillis() + 999L) / 1000L
+            return if (left < 0) 0 else left
+        }
+
     val remainingSeconds: Long
         get() {
             if (!hasTimeLimit) return Long.MAX_VALUE
@@ -36,12 +51,38 @@ class KidModeState(context: Context) {
 
     val expired: Boolean get() = active && hasTimeLimit && remainingSeconds <= 0L
 
+    /**
+     * Records a wrong unlock answer. Returns true when that tripped the lockout.
+     *
+     * Only the final step calls this — see [KidModeDialogs]. A child mashing the
+     * maths question should not be able to lock a parent out of their own phone.
+     */
+    fun registerFailedUnlock(): Boolean {
+        val failures = prefs.getInt(KEY_FAILED, 0) + 1
+        return if (failures >= MAX_UNLOCK_ATTEMPTS) {
+            prefs.edit()
+                .putInt(KEY_FAILED, 0)
+                .putLong(KEY_BLOCKED_UNTIL, System.currentTimeMillis() + LOCKOUT_MS)
+                .apply()
+            true
+        } else {
+            prefs.edit().putInt(KEY_FAILED, failures).apply()
+            false
+        }
+    }
+
+    fun clearUnlockFailures() {
+        prefs.edit().putInt(KEY_FAILED, 0).putLong(KEY_BLOCKED_UNTIL, 0L).apply()
+    }
+
     fun start(limitMinutes: Int, pin: String?, requirePin: Boolean, requireMath: Boolean) {
         // A deadline rather than a countdown, so time keeps running while the app is
         // closed. Wall clock, not elapsedRealtime, because that resets on reboot.
         val deadline =
             if (limitMinutes > 0) System.currentTimeMillis() + limitMinutes * 60_000L else 0L
         prefs.edit()
+            .putInt(KEY_FAILED, 0)
+            .putLong(KEY_BLOCKED_UNTIL, 0L)
             .putBoolean(KEY_ACTIVE, true)
             .putLong(KEY_DEADLINE, deadline)
             .putInt(KEY_TOTAL_SECONDS, limitMinutes * 60)
@@ -57,15 +98,23 @@ class KidModeState(context: Context) {
             .putBoolean(KEY_ACTIVE, false)
             .putLong(KEY_DEADLINE, 0L)
             .putInt(KEY_TOTAL_SECONDS, 0)
+            .putInt(KEY_FAILED, 0)
+            .putLong(KEY_BLOCKED_UNTIL, 0L)
             .apply()
     }
 
-    private companion object {
+    companion object {
+        /** Wrong answers allowed before the lockout, and how long it lasts. */
+        const val MAX_UNLOCK_ATTEMPTS = 3
+        const val LOCKOUT_MS = 5 * 60_000L
+
         const val KEY_ACTIVE = "active"
         const val KEY_DEADLINE = "deadline_at"
         const val KEY_TOTAL_SECONDS = "total_seconds"
         const val KEY_PIN = "pin"
         const val KEY_REQUIRE_PIN = "require_pin"
         const val KEY_REQUIRE_MATH = "require_math"
+        const val KEY_FAILED = "failed_unlocks"
+        const val KEY_BLOCKED_UNTIL = "unlock_blocked_until"
     }
 }

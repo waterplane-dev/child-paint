@@ -105,18 +105,6 @@
             android:visibility="gone" />
     </LinearLayout>
 
-    <ImageView
-        android:id="@+id/lockCorner"
-        android:layout_width="46dp"
-        android:layout_height="46dp"
-        android:layout_gravity="top|start"
-        android:layout_margin="8dp"
-        android:layout_marginTop="28dp"
-        android:padding="11dp"
-        android:alpha="0.4"
-        android:src="@drawable/ic_lock"
-        android:contentDescription="@string/unlock_title"
-        android:visibility="gone" />
 
     <LinearLayout
         android:id="@+id/expiredOverlay"

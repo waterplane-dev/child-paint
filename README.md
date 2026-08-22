@@ -34,12 +34,18 @@ that hands the phone over to the child.
   minutes, or no limit. A countdown badge turns orange at 5 minutes left and red
   at 1 minute. When it runs out, a full-screen overlay blocks the paper and the
   tools until a grown-up unlocks it — the drawing is kept, not thrown away.
-- **A guarded way back.** Hold the padlock in the corner. Unlocking asks a
-  multiplication question (a two-digit number times a single digit) and then a
-  4-digit PIN. Either barrier can be switched off when kid mode is started.
+- **A guarded way back, at any time.** Press and hold the padlock in the toolbar —
+  it is there for the whole session, not only once the time runs out. Unlocking
+  asks a sum (two two-digit numbers that need no carrying, like 34 + 25) and then
+  a 4-digit PIN. Either barrier can be switched off when kid mode is started.
+- **Three tries, then a five-minute wait.** Three wrong PINs and the unlock
+  refuses to open again for five minutes, so the PIN cannot be guessed by
+  hammering at it. Wrong answers to the *sum* do not count — otherwise a child
+  poking at the question could lock a grown-up out of their own phone.
 
 The session is stored on disk, not in memory: force-stopping the app or rebooting
-the phone comes straight back to kid mode with the same time already used up.
+the phone comes straight back to kid mode with the same time already used up, and
+with any wait from too many wrong PINs still running.
 
 ### What screen pinning can and cannot do
 

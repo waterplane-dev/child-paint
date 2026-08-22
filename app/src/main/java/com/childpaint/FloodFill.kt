@@ -1,7 +1,6 @@
 package com.childpaint
 
 import android.graphics.Bitmap
-import android.graphics.Color
 import kotlin.math.abs
 import kotlin.math.max
 
@@ -38,17 +37,49 @@ object FloodFill {
         val pixels = scratchOf(w * h)
         bitmap.getPixels(pixels, 0, w, 0, 0, w, h)
 
+        fillPixels(pixels, w, h, startX, startY, newColor, tolerance)
+
+        bitmap.setPixels(pixels, 0, w, 0, 0, w, h)
+    }
+
+    /**
+     * The pure scanline algorithm, operating in place on an ARGB_8888 pixel
+     * array. No android.* references here, so it runs as a plain JVM unit test —
+     * the Bitmap-based [fill] above is just a thin getPixels/setPixels wrapper
+     * around this.
+     */
+    internal fun fillPixels(
+        pixels: IntArray,
+        width: Int,
+        height: Int,
+        startX: Int,
+        startY: Int,
+        newColor: Int,
+        tolerance: Int,
+    ) {
+        val w = width
+        val h = height
+
         val target = pixels[startY * w + startX]
         if (target == newColor) return
+
+        val targetA = (target ushr 24) and 0xFF
+        val targetR = (target ushr 16) and 0xFF
+        val targetG = (target ushr 8) and 0xFF
+        val targetB = target and 0xFF
 
         // Filled pixels take newColor, and newColor never matches, so each pixel is
         // visited once and the scan always terminates.
         fun matches(p: Int): Boolean {
             if (p == newColor) return false
             if (p == target) return true
+            val a = (p ushr 24) and 0xFF
+            val r = (p ushr 16) and 0xFF
+            val g = (p ushr 8) and 0xFF
+            val b = p and 0xFF
             val d = max(
-                max(abs(Color.red(p) - Color.red(target)), abs(Color.green(p) - Color.green(target))),
-                max(abs(Color.blue(p) - Color.blue(target)), abs(Color.alpha(p) - Color.alpha(target)))
+                max(abs(r - targetR), abs(g - targetG)),
+                max(abs(b - targetB), abs(a - targetA))
             )
             return d <= tolerance
         }
@@ -93,7 +124,5 @@ object FloodFill {
                 x++
             }
         }
-
-        bitmap.setPixels(pixels, 0, w, 0, 0, w, h)
     }
 }

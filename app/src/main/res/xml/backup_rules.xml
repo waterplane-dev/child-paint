@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Cloud backup rules for Android 11 and below.
+
+  Everything is backed up except the kid-mode preferences. The parental PIN is
+  stored there in plain text — a proportionate barrier against a small child,
+  who cannot read app-private storage, but not something that should leave the
+  device and sit in a cloud backup. The autosaved canvas is deliberately kept:
+  a child's drawing surviving a phone migration is the whole point of autosave.
+-->
+<full-backup-content>
+    <exclude domain="sharedpref" path="kid_mode.xml" />
+</full-backup-content>
