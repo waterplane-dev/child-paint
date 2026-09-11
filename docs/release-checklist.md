@@ -58,10 +58,11 @@ binding, or serialization depend on.
         -keyalg RSA -keysize 2048 -validity 10000
       ```
 - [ ] **Losing this keystore, or its passwords, is unrecoverable** unless
-      the app is enrolled in Play App Signing (recommended — Play then
-      re-signs the app for distribution from an upload key you can rotate
-      if it is ever lost, rather than a single point of failure). Store the
-      keystore and its passwords in a password manager, not just on disk.
+      the app is enrolled in Play App Signing. That enrolment is not
+      optional — every new app uploading an AAB is enrolled, and the key
+      generated above is therefore an *upload* key, which Google can help
+      you reset if it is lost. Store the keystore and its passwords in a
+      password manager, not just on disk.
 - [ ] Create `keystore.properties` at the repo root (see
       `keystore.properties.example` for the expected keys: `storeFile`,
       `storePassword`, `keyAlias`, `keyPassword`) pointing at the keystore

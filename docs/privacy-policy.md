@@ -12,10 +12,13 @@ little with data: it has no internet access and nothing to send anywhere.
 - No data is collected, transmitted, sold, or shared with anyone, including
   the developer.
 - No ads, no analytics, no crash reporting, no third-party SDKs. The app's
-  only dependencies are AndroidX (`core-ktx`, `appcompat`, `constraintlayout`)
+  only dependencies are AndroidX (`core-ktx`, `activity`, `appcompat`, `constraintlayout`)
   and Material Components — libraries, not services, and none of them phone
   home.
 - No accounts, no sign-in, no user-generated-content sharing of any kind.
+- The only permissions are VIBRATE, for the optional buzz when a kid-mode
+  session runs out, and on Android 9 and below WRITE_EXTERNAL_STORAGE, for
+  saving a picture to the gallery.
 
 ## Where drawings are stored
 
@@ -24,11 +27,25 @@ The current drawing is autosaved to the app's private internal storage
 readable by other apps and is not uploaded anywhere.
 
 If a parent taps the save button, the app writes a PNG of the drawing to the
-device's own gallery, under `Pictures/Paint`, using the standard Android
+device's own gallery, under `Pictures/Little Painter`, using the standard Android
 MediaStore (or, on Android 9 and below, the legacy public Pictures directory
 via the `WRITE_EXTERNAL_STORAGE` permission, which the app requests only on
 those older versions and only for this purpose). That file stays on the
 device; the app has no means of transmitting it elsewhere.
+
+## Photos
+
+A parent can optionally switch on "Paint on a photo", which opens the Android
+system photo picker. The app never receives access to the gallery as a whole:
+the picker runs outside the app, it requests no photo permission, and the app
+is handed only the single image the parent chose. That image is drawn onto the
+current page and from then on is part of the drawing, stored exactly like any
+other drawing — in the app's private internal storage, and in the gallery only
+if a parent taps save. It is not transmitted anywhere, because the app has no
+means of transmitting anything.
+
+The feature is off until a grown-up turns it on, and its button is hidden while
+kid mode is running.
 
 ## Parental controls (kid mode)
 
