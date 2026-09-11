@@ -30,3 +30,9 @@ keystore.properties
 .claude/outbox/
 .claude/inbox/
 .usmc/
+
+# Local, non-public guidance — see CLAUDE.md's public counterpart.
+CLAUDE.local.md
+
+# USMC phone↔repo transport — do not commit
+.outbox
