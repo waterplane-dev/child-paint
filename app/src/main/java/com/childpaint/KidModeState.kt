@@ -25,6 +25,21 @@ class KidModeState(context: Context) {
     val pin: String? get() = prefs.getString(KEY_PIN, null)
     val requirePin: Boolean get() = prefs.getBoolean(KEY_REQUIRE_PIN, true)
     val requireMath: Boolean get() = prefs.getBoolean(KEY_REQUIRE_MATH, true)
+
+    /** How the end of the session announces itself, if at all. */
+    val alertVibrate: Boolean get() = prefs.getBoolean(KEY_ALERT_VIBRATE, true)
+    val alertSound: Boolean get() = prefs.getBoolean(KEY_ALERT_SOUND, false)
+
+    /**
+     * Whether the end of *this* session has already been announced. Persisted with
+     * everything else: the alert is a one-off, and a child who kills the app after
+     * time runs out should not be able to set it off again by reopening.
+     */
+    val expiryAlerted: Boolean get() = prefs.getBoolean(KEY_ALERTED, false)
+
+    fun markExpiryAlerted() {
+        prefs.edit().putBoolean(KEY_ALERTED, true).apply()
+    }
     val totalSeconds: Int get() = prefs.getInt(KEY_TOTAL_SECONDS, 0)
 
     /**
@@ -75,7 +90,14 @@ class KidModeState(context: Context) {
         prefs.edit().putInt(KEY_FAILED, 0).putLong(KEY_BLOCKED_UNTIL, 0L).apply()
     }
 
-    fun start(limitMinutes: Int, pin: String?, requirePin: Boolean, requireMath: Boolean) {
+    fun start(
+        limitMinutes: Int,
+        pin: String?,
+        requirePin: Boolean,
+        requireMath: Boolean,
+        alertVibrate: Boolean,
+        alertSound: Boolean
+    ) {
         // A deadline rather than a countdown, so time keeps running while the app is
         // closed. Wall clock, not elapsedRealtime, because that resets on reboot.
         val deadline =
@@ -89,6 +111,9 @@ class KidModeState(context: Context) {
             .putString(KEY_PIN, pin)
             .putBoolean(KEY_REQUIRE_PIN, requirePin)
             .putBoolean(KEY_REQUIRE_MATH, requireMath)
+            .putBoolean(KEY_ALERT_VIBRATE, alertVibrate)
+            .putBoolean(KEY_ALERT_SOUND, alertSound)
+            .putBoolean(KEY_ALERTED, false)
             .apply()
     }
 
@@ -96,6 +121,7 @@ class KidModeState(context: Context) {
     fun stop() {
         prefs.edit()
             .putBoolean(KEY_ACTIVE, false)
+            .putBoolean(KEY_ALERTED, false)
             .putLong(KEY_DEADLINE, 0L)
             .putInt(KEY_TOTAL_SECONDS, 0)
             .putInt(KEY_FAILED, 0)
@@ -114,6 +140,9 @@ class KidModeState(context: Context) {
         const val KEY_PIN = "pin"
         const val KEY_REQUIRE_PIN = "require_pin"
         const val KEY_REQUIRE_MATH = "require_math"
+        const val KEY_ALERT_VIBRATE = "alert_vibrate"
+        const val KEY_ALERT_SOUND = "alert_sound"
+        const val KEY_ALERTED = "expiry_alerted"
         const val KEY_FAILED = "failed_unlocks"
         const val KEY_BLOCKED_UNTIL = "unlock_blocked_until"
     }

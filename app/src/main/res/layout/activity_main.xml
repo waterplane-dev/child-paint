@@ -4,6 +4,7 @@
     android:layout_height="match_parent">
 
 <LinearLayout
+    android:id="@+id/paperColumn"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
@@ -16,11 +17,15 @@
         android:layout_weight="1" />
 
     <!-- Every control is on screen at once: a child should never have to scroll
-         a toolbar to find the star. Rows are weight-filled so they fit any width. -->
+         a toolbar to find the star. Rows are weight-filled so they fit any width.
+         With the hide-the-tools extra on, this whole block is moved into
+         toolbarOverlay below and floats over the paper instead. -->
     <LinearLayout
+        android:id="@+id/toolbar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
+        android:background="@color/chrome"
         android:paddingHorizontal="8dp"
         android:paddingTop="6dp"
         android:paddingBottom="8dp">
@@ -67,6 +72,31 @@
             android:orientation="horizontal" />
     </LinearLayout>
 </LinearLayout>
+
+    <!-- Where the toolbar lives when the hide-the-tools extra is on. It overlays
+         the paper rather than sitting above it in the column: taking the toolbar
+         out of the layout would resize the canvas every time it opened, and the
+         bitmap is recreated on a size change while op coordinates are canvas
+         pixels — the picture would shift under the child twice a minute. -->
+    <FrameLayout
+        android:id="@+id/toolbarOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom" />
+
+    <!-- The way back to the tools once they are hidden. Deliberately a chunky
+         target at the bottom edge, in the same chrome as every other button. -->
+    <ImageView
+        android:id="@+id/toolbarHandle"
+        android:layout_width="86dp"
+        android:layout_height="34dp"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="10dp"
+        android:src="@drawable/ic_chevron_up"
+        android:scaleType="fitCenter"
+        android:paddingVertical="6dp"
+        android:contentDescription="@string/show_tools"
+        android:visibility="gone" />
 
     <!-- Kid-mode chrome. All gone in parent mode; the overlay sits above the
          toolbar too, so an expired session blocks the tools as well as the paper. -->

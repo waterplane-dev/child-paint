@@ -25,8 +25,8 @@ android {
         applicationId = "io.github.johanneshoh.childpaint"
         minSdk = 24
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 4
+        versionName = "1.3"
     }
 
     signingConfigs {
@@ -56,6 +56,9 @@ android {
 
     buildFeatures {
         viewBinding = true
+        // The parent panel prints the version, so a build that never finished
+        // installing is visible instead of looking like a missing feature.
+        buildConfig = true
     }
 
     compileOptions {
@@ -68,8 +71,15 @@ android {
     }
 }
 
+// Pinned to the newest versions that build against AGP 8.13.2 / compileSdk 36.
+// The current androidx releases require AGP 9.1 and compileSdk 37; that upgrade
+// is a separate piece of work (AGP 9 changes the DSL) and is not needed to
+// satisfy Play's target-API rule, which targetSdk 36 already meets.
 dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
+    // PickVisualMedia: the system photo picker, which needs no gallery permission
+    // and shows the child's whole library to nobody but the person holding it.
+    implementation("androidx.activity:activity:1.8.2")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")

@@ -166,6 +166,43 @@ class FloodFillTest {
     }
 
     @Test
+    fun `pixels already in the new colour act as walls, so a wide tolerance still terminates`() {
+        // The termination argument rests on newColor never matching: filled pixels
+        // take newColor, so each pixel is visited at most once. With a tolerance
+        // wide enough to swallow every other colour, that guard is the ONLY thing
+        // stopping the scan, and the RED stripe is the only thing that can leave
+        // an unfilled pixel behind.
+        val (pixels, w, h) = canvasOf(
+            """
+            WWWWW
+            WWWWW
+            RRRRR
+            WWWWW
+            WWWWW
+            """.trimIndent(),
+            mapOf('W' to WHITE, 'R' to RED)
+        )
+
+        FloodFill.fillPixels(pixels, w, h, 0, 0, RED, tolerance = 255)
+
+        // The stripe is already newColor, so it never matches and the fill cannot
+        // cross it — even though tolerance 255 would otherwise swallow every
+        // colour on the canvas. The rows below stay white, and the scan returns
+        // instead of looping over pixels it has already recoloured.
+        val (expected, _, _) = canvasOf(
+            """
+            RRRRR
+            RRRRR
+            RRRRR
+            WWWWW
+            WWWWW
+            """.trimIndent(),
+            mapOf('W' to WHITE, 'R' to RED)
+        )
+        assertArrayEquals(expected, pixels)
+    }
+
+    @Test
     fun `1x1 canvas`() {
         val pixels = intArrayOf(WHITE)
 

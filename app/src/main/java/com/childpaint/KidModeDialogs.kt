@@ -104,6 +104,25 @@ fun Activity.showKidModeSetup(state: KidModeState, onStart: () -> Unit) {
         isChecked = state.requireMath
     }
 
+    // How the end of the session announces itself. A grown-up in the next room
+    // cannot see the overlay, and a child who cannot read will not tell them.
+    val alertVibrate = CheckBox(this).apply {
+        text = getString(R.string.kid_setup_alert_vibrate)
+        isChecked = state.alertVibrate
+    }
+    val alertSound = CheckBox(this).apply {
+        text = getString(R.string.kid_setup_alert_sound)
+        isChecked = state.alertSound
+    }
+
+    // The extras dialog has no button of its own; without this line the only way
+    // to find it is to try holding a lock that already does something on a tap.
+    val extrasHint = TextView(this).apply {
+        text = getString(R.string.kid_setup_extras_hint)
+        alpha = 0.7f
+        setPadding(0, dpOf(12), 0, 0)
+    }
+
     val content = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         setPadding(pad, dpOf(12), pad, 0)
@@ -113,6 +132,9 @@ fun Activity.showKidModeSetup(state: KidModeState, onStart: () -> Unit) {
         addView(requirePin)
         addView(pinField)
         addView(requireMath)
+        addView(alertVibrate)
+        addView(alertSound)
+        addView(extrasHint)
     }
     markDuration(selectedMinutes)
 
@@ -144,11 +166,67 @@ fun Activity.showKidModeSetup(state: KidModeState, onStart: () -> Unit) {
             limitMinutes = selectedMinutes,
             pin = if (requirePin.isChecked) pin else state.pin,
             requirePin = requirePin.isChecked,
-            requireMath = requireMath.isChecked
+            requireMath = requireMath.isChecked,
+            alertVibrate = alertVibrate.isChecked,
+            alertSound = alertSound.isChecked
         )
         dialog.dismiss()
         onStart()
     }
+}
+
+/**
+ * The grown-up panel: the optional extras, off by default.
+ *
+ * It sits behind a long press on the lock in parent mode, and is unreachable in
+ * kid mode because there the same long press is the unlock. That is the whole
+ * gate — no maths, no PIN — because the phone is already in a grown-up's hands
+ * when this is reachable at all. What it guards against is a child wandering into
+ * the photo picker, not a determined attacker.
+ */
+fun Activity.showParentExtras(settings: ParentSettings, onChanged: () -> Unit) {
+    val photo = CheckBox(this).apply {
+        text = getString(R.string.extras_photo)
+        isChecked = settings.photoPaper
+    }
+    val shapes = CheckBox(this).apply {
+        text = getString(R.string.extras_fun_shapes)
+        isChecked = settings.funShapes
+    }
+    val hideToolbar = CheckBox(this).apply {
+        text = getString(R.string.extras_hide_toolbar)
+        isChecked = settings.hideToolbar
+    }
+    // Which build is actually on the phone. Every APK looked identical from the
+    // inside, so a build that never finished installing was indistinguishable
+    // from one that did — and the answer was "the change is missing" either way.
+    val version = TextView(this).apply {
+        text = getString(R.string.extras_version, BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE)
+        textSize = 12f
+        alpha = 0.6f
+        setPadding(0, dpOf(12), 0, 0)
+    }
+    val content = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(dpOf(20), dpOf(12), dpOf(20), 0)
+        addView(photo)
+        addView(shapes)
+        addView(hideToolbar)
+        addView(version)
+    }
+
+    AlertDialog.Builder(this)
+        .setTitle(R.string.extras_title)
+        .setMessage(R.string.extras_explainer)
+        .setView(content)
+        .setPositiveButton(R.string.ok) { _, _ ->
+            settings.photoPaper = photo.isChecked
+            settings.funShapes = shapes.isChecked
+            settings.hideToolbar = hideToolbar.isChecked
+            onChanged()
+        }
+        .setNegativeButton(R.string.cancel, null)
+        .show()
 }
 
 /**
@@ -197,7 +275,7 @@ private fun Activity.runUnlockStep(
         return
     }
 
-    // Two two-digit numbers chosen so no column carries: 34 + 25, never 38 + 27.
+    // Two two-digit numbers chosen so no column carries: 32 + 24, never 38 + 27.
     // An adult reads the answer off the page; a pre-schooler cannot add tens at
     // all. Multiplication tables were the thing the parent had to stop and think
     // about, and thinking is what this question must not require of them.
@@ -253,9 +331,11 @@ private fun Activity.runUnlockStep(
 /** Tells whoever is holding the phone how long the lockout has left to run. */
 private fun Activity.showLockedOut(seconds: Long) {
     val message = if (seconds >= 60) {
-        getString(R.string.unlock_blocked_minutes, ((seconds + 59) / 60).toInt())
+        val minutes = ((seconds + 59) / 60).toInt()
+        resources.getQuantityString(R.plurals.unlock_blocked_minutes, minutes, minutes)
     } else {
-        getString(R.string.unlock_blocked_seconds, seconds.toInt())
+        val secs = seconds.toInt()
+        resources.getQuantityString(R.plurals.unlock_blocked_seconds, secs, secs)
     }
     AlertDialog.Builder(this)
         .setTitle(R.string.unlock_blocked_title)

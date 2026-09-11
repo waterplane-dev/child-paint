@@ -8,24 +8,36 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
+import android.media.AudioAttributes
+import android.media.Ringtone
+import android.media.RingtoneManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.text.InputType
 import android.os.Environment
 import android.os.Handler
 import android.os.Looper
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.provider.MediaStore
+import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
 import androidx.activity.OnBackPressedCallback
 import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -45,13 +57,17 @@ class MainActivity : AppCompatActivity() {
     private val colorSwatches = mutableListOf<Pair<Int, View>>()
     private val toolButtons = mutableListOf<Pair<Tool, ImageView>>()
     private lateinit var fillToggle: ImageView
+    private lateinit var moreButton: ImageView
     private lateinit var undoButton: ImageView
     private lateinit var redoButton: ImageView
     private lateinit var saveButton: ImageView
+    private lateinit var photoButton: ImageView
     private lateinit var kidModeButton: ImageView
 
     private val kidMode by lazy { KidModeState(this) }
-    private val autosaveExecutor = Executors.newSingleThreadExecutor()
+    private val settings by lazy { ParentSettings(this) }
+    /** Autosave encoding and photo decoding both go here: off the UI thread, in order. */
+    private val ioExecutor = Executors.newSingleThreadExecutor()
     private val autosave = Runnable { persistPicture() }
     private val ticker = Handler(Looper.getMainLooper())
     private val tick = object : Runnable {
@@ -62,6 +78,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private var backBlocker: OnBackPressedCallback? = null
+
+    /** Held so the alarm can be silenced on unlock rather than running its course. */
+    private var expiryAlarm: Ringtone? = null
+
+    private val pickPhoto = registerForActivityResult(
+        ActivityResultContracts.PickVisualMedia()
+    ) { uri -> if (uri != null) usePhotoAsPaper(uri) }
 
     private val requestStorage = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -79,7 +102,12 @@ class MainActivity : AppCompatActivity() {
         buildToolRow()
         buildActionRow()
 
-        binding.paintView.onTextRequested = { x, y -> promptForText(x, y) }
+        // Touching the paper puts the tools away again — the tools are open only
+        // for as long as it takes to pick one.
+        binding.paintView.onCanvasTouched = { if (settings.hideToolbar) showToolbar(false) }
+        binding.toolbarHandle.setOnClickListener { showToolbar(true) }
+
+        binding.paintView.onTextRequested = { existing -> promptForText(existing) }
         binding.paintView.onHistoryChanged = {
             refreshHistoryButtons()
             scheduleAutosave()
@@ -103,6 +131,7 @@ class MainActivity : AppCompatActivity() {
         }.also { backBlocker = it })
 
         restoreLastPicture()
+        applyToolbarMode()
         binding.paintView.strokeWidth = progressToWidth(binding.sizeBar.progress)
         selectColor(PALETTE[0])
         selectTool(Tool.BRUSH)
@@ -121,12 +150,13 @@ class MainActivity : AppCompatActivity() {
         super.onStop()
         ticker.removeCallbacks(tick)
         ticker.removeCallbacks(autosave)
+        stopExpiryAlert()
         persistPicture()
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        autosaveExecutor.shutdown()
+        ioExecutor.shutdown()
     }
 
     /**
@@ -158,6 +188,9 @@ class MainActivity : AppCompatActivity() {
 
         // No saving in kid mode: one canvas, and nothing lands in the phone gallery.
         saveButton.visibility = if (active) View.GONE else View.VISIBLE
+        // Same reasoning for the photo picker, plus one more: it would have to open
+        // another app's UI over a session that is meant to have no way out.
+        photoButton.visibility = if (active || !settings.photoPaper) View.GONE else View.VISIBLE
 
         // The lock lives in the toolbar in both modes. It used to be a translucent
         // badge floating over the paper, which vanished the moment a child painted
@@ -169,8 +202,7 @@ class MainActivity : AppCompatActivity() {
             kidModeButton.setOnLongClickListener { attemptUnlock(); true }
         } else {
             kidModeButton.setOnClickListener { showKidModeSetup(kidMode) { applyKidMode(started = true) } }
-            kidModeButton.setOnLongClickListener(null)
-            kidModeButton.isLongClickable = false
+            kidModeButton.setOnLongClickListener { showParentExtras(settings) { applyExtras() }; true }
         }
 
         if (active) {
@@ -198,6 +230,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun attemptUnlock() {
         showUnlockDialog(kidMode) {
+            stopExpiryAlert()
             kidMode.stop()
             applyKidMode(started = false)
             toast(getString(R.string.kid_mode_ended))
@@ -214,6 +247,10 @@ class MainActivity : AppCompatActivity() {
 
         val expired = kidMode.expired
         binding.expiredOverlay.visibility = if (expired) View.VISIBLE else View.GONE
+        if (expired && !kidMode.expiryAlerted) {
+            kidMode.markExpiryAlerted()
+            soundExpiryAlert()
+        }
 
         if (!kidMode.hasTimeLimit || expired) {
             binding.timerHud.visibility = View.GONE
@@ -246,6 +283,62 @@ class MainActivity : AppCompatActivity() {
                 setStroke(dp(2), accent)
             }
         }
+    }
+
+    /**
+     * Buzzes and/or sounds the alarm once, when the session runs out.
+     *
+     * Fired from the one-second tick, guarded by a persisted flag: the tick would
+     * otherwise re-fire it every second for as long as the overlay is up, and a
+     * relaunch after time is up would set it off again.
+     */
+    private fun soundExpiryAlert() {
+        if (kidMode.alertVibrate) {
+            val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                getSystemService(VibratorManager::class.java)?.defaultVibrator
+            } else {
+                @Suppress("DEPRECATION")
+                getSystemService(Vibrator::class.java)
+            }
+            if (vibrator?.hasVibrator() == true) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    vibrator.vibrate(VibrationEffect.createWaveform(VIBRATE_PATTERN, -1))
+                } else {
+                    @Suppress("DEPRECATION")
+                    vibrator.vibrate(VIBRATE_PATTERN, -1)
+                }
+            }
+        }
+
+        if (!kidMode.alertSound) return
+        val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+            ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+            ?: return
+        try {
+            expiryAlarm = RingtoneManager.getRingtone(this, uri)?.apply {
+                // The alarm stream, so it is audible from the next room even with the
+                // ringer down — which is the whole point of the option.
+                audioAttributes = AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_ALARM)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build()
+                play()
+            }
+            // Stopped on a timer as well as on unlock: an alarm nobody silences is
+            // a punishment for the child sitting next to it.
+            ticker.postDelayed({ stopExpiryAlert() }, ALARM_MS)
+        } catch (e: Exception) {
+            // A missing or unplayable alarm sound must not take kid mode down.
+        }
+    }
+
+    private fun stopExpiryAlert() {
+        try {
+            expiryAlarm?.takeIf { it.isPlaying }?.stop()
+        } catch (e: Exception) {
+            // Nothing useful to do if the ringtone is already gone.
+        }
+        expiryAlarm = null
     }
 
     private fun applyImmersiveMode() {
@@ -284,8 +377,8 @@ class MainActivity : AppCompatActivity() {
         // Copy on the UI thread (cheap), encode off it (not cheap).
         val bitmap = binding.paintView.exportBitmap() ?: return
         val target = File(filesDir, AUTOSAVE_NAME)
-        if (autosaveExecutor.isShutdown) return
-        autosaveExecutor.execute {
+        if (ioExecutor.isShutdown) return
+        ioExecutor.execute {
             try {
                 FileOutputStream(target).use { out ->
                     bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
@@ -322,6 +415,124 @@ class MainActivity : AppCompatActivity() {
 
     /** Slider is non-linear so the thin end has usable resolution for detail work. */
     private fun progressToWidth(progress: Int): Float = 2f + (progress / 100f) * (progress / 100f) * 78f
+
+    // ---- grown-up extras ------------------------------------------------------
+
+    /**
+     * Moves the toolbar between the column and the overlay, and shows whichever of
+     * the toolbar and its handle belongs on screen.
+     *
+     * Reparenting rather than a second copy of the toolbar: it is built in code,
+     * and two of them would mean two sets of buttons to keep in step.
+     */
+    private fun applyToolbarMode() {
+        val hidden = settings.hideToolbar
+        val toolbar = binding.toolbar
+        val target: ViewGroup = if (hidden) binding.toolbarOverlay else binding.paperColumn
+        val parent = toolbar.parent as? ViewGroup
+        if (parent !== target) {
+            parent?.removeView(toolbar)
+            toolbar.layoutParams = if (hidden) {
+                FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                    Gravity.BOTTOM
+                )
+            } else {
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+            }
+            target.addView(toolbar)
+        }
+        binding.toolbarHandle.background = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = dp(17).toFloat()
+            setColor(0xF2FFFFFF.toInt())
+            setStroke(dp(2), 0xFFD8C4B2.toInt())
+        }
+        binding.toolbarHandle.imageTintList = ColorStateList.valueOf(ICON_TINT)
+        showToolbar(!hidden)
+    }
+
+    /** In hide mode the handle and the toolbar swap places; otherwise it is a no-op. */
+    private fun showToolbar(visible: Boolean) {
+        if (!settings.hideToolbar) {
+            binding.toolbar.visibility = View.VISIBLE
+            binding.toolbarHandle.visibility = View.GONE
+            return
+        }
+        binding.toolbar.visibility = if (visible) View.VISIBLE else View.GONE
+        binding.toolbarHandle.visibility = if (visible) View.GONE else View.VISIBLE
+    }
+
+    /** Re-reads [ParentSettings] and puts the toolbar back in line with it. */
+    private fun applyExtras() {
+        val current = binding.paintView.tool
+        buildToolRow()
+        // A dress-up tool that is no longer on screen must not stay selected, or the
+        // next tap on the paper draws a moustache from a button nobody can see.
+        val stillThere = toolButtons.any { it.first == current }
+        selectTool(if (stillThere) current else Tool.BRUSH)
+        photoButton.visibility = if (kidMode.active || !settings.photoPaper) View.GONE else View.VISIBLE
+        applyToolbarMode()
+    }
+
+    /**
+     * Confirms first: the photo becomes the new paper, and whatever is on the paper
+     * now is gone. Undo cannot bring it back either — a new paper starts a new
+     * history — so this is the one destructive step that gets a dialog rather than
+     * the press-and-hold the clear button uses.
+     */
+    private fun onPhotoClicked() {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.photo_title)
+            .setMessage(R.string.photo_confirm)
+            .setPositiveButton(R.string.photo_pick) { _, _ ->
+                pickPhoto.launch(
+                    PickVisualMediaRequest.Builder()
+                        .setMediaType(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        .build()
+                )
+            }
+            // The way back out. Holding the clear button paints over a photo, but
+            // leaves it underneath for undo to walk back onto — so without this
+            // there is no way to be rid of a photo short of clearing and never
+            // undoing, and nothing on screen says even that.
+            .setNeutralButton(R.string.photo_blank) { _, _ ->
+                binding.paintView.useBlankPaper()
+                refreshHistoryButtons()
+                scheduleAutosave()
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun usePhotoAsPaper(uri: Uri) {
+        val width = binding.paintView.width
+        val height = binding.paintView.height
+        if (width <= 0 || height <= 0) {
+            toast(getString(R.string.photo_failed))
+            return
+        }
+        val paperColor = binding.paintView.paperColor
+        // Decoding a phone camera photo is tens of milliseconds at best and a
+        // visible stutter at worst, so it happens on the same worker the autosave
+        // uses and comes back to the canvas on the main thread.
+        ioExecutor.execute {
+            val paper = PhotoPaper.load(this, uri, width, height, paperColor)
+            runOnUiThread {
+                if (paper == null) {
+                    toast(getString(R.string.photo_failed))
+                    return@runOnUiThread
+                }
+                binding.paintView.setPaperPicture(paper)
+                refreshHistoryButtons()
+                scheduleAutosave()
+            }
+        }
+    }
 
     // ---- toolbar construction -------------------------------------------------
 
@@ -367,7 +578,10 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /** Rebuilt, not appended to, because the grown-up extras change the drawer. */
     private fun buildToolRow() {
+        binding.toolGrid.removeAllViews()
+        toolButtons.clear()
         var row = gridRow()
         TOOLS.forEachIndexed { index, (tool, icon) ->
             if (index % TOOLS_PER_ROW == 0) {
@@ -381,17 +595,82 @@ class MainActivity : AppCompatActivity() {
             toolButtons += tool to button
             row.addView(button)
         }
+        // The "..." button rides along as the next cell rather than sitting off to
+        // one side, where it would read as an action instead of as more tools.
+        if (TOOLS.size % TOOLS_PER_ROW == 0) {
+            row = gridRow()
+            binding.toolGrid.addView(row)
+        }
+        moreButton = chromeButton(R.drawable.ic_more).apply {
+            layoutParams = cellParams(52)
+            setOnClickListener { showMoreTools() }
+        }
+        row.addView(moreButton)
+        // Pad the last row out to a full one. The cells are weight-laid-out, so a
+        // row holding two buttons stretched them to half the screen each and the
+        // dress-up shapes ended up twice the size of every other tool.
+        val remainder = (TOOLS.size + 1) % TOOLS_PER_ROW
+        if (remainder != 0) {
+            repeat(TOOLS_PER_ROW - remainder) {
+                row.addView(View(this).apply { layoutParams = cellParams(52) })
+            }
+        }
+    }
+
+    /** Everything that did not earn a permanent place on the toolbar. */
+    private fun moreTools(): List<Pair<Tool, Int>> =
+        if (settings.funShapes) MORE_TOOLS + FUN_TOOLS else MORE_TOOLS
+
+    private fun showMoreTools() {
+        val tools = moreTools()
+        val grid = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+        }
+        var row = gridRow()
+        lateinit var dialog: AlertDialog
+        tools.forEachIndexed { index, (tool, icon) ->
+            if (index % MORE_PER_ROW == 0) {
+                row = gridRow()
+                grid.addView(row)
+            }
+            row.addView(
+                chromeButton(icon).apply {
+                    layoutParams = cellParams(60)
+                    setSelectedLook(binding.paintView.tool == tool)
+                    setOnClickListener {
+                        selectTool(tool)
+                        dialog.dismiss()
+                    }
+                }
+            )
+        }
+        // Same reason as the toolbar: weighted cells in a short row grow to fill it.
+        val remainder = tools.size % MORE_PER_ROW
+        if (remainder != 0) {
+            repeat(MORE_PER_ROW - remainder) {
+                row.addView(View(this).apply { layoutParams = cellParams(60) })
+            }
+        }
+        dialog = AlertDialog.Builder(this)
+            .setTitle(R.string.more_shapes_title)
+            .setView(grid)
+            .create()
+        dialog.show()
     }
 
     private fun buildActionRow() {
-        fillToggle = chromeButton(R.drawable.ic_shape_outline).apply {
+        // Three states rather than two, cycled by tapping: filled, filled with a
+        // rim, outline. It starts on filled because that is what a child means by
+        // "draw a hat".
+        fillToggle = chromeButton(R.drawable.ic_shape_filled).apply {
             setOnClickListener {
-                binding.paintView.fillShapes = !binding.paintView.fillShapes
-                setImageResource(
-                    if (binding.paintView.fillShapes) R.drawable.ic_shape_filled
-                    else R.drawable.ic_shape_outline
-                )
-                setSelectedLook(binding.paintView.fillShapes)
+                binding.paintView.shapeStyle = when (binding.paintView.shapeStyle) {
+                    ShapeStyle.FILLED -> ShapeStyle.FILLED_OUTLINE
+                    ShapeStyle.FILLED_OUTLINE -> ShapeStyle.OUTLINE
+                    ShapeStyle.OUTLINE -> ShapeStyle.FILLED
+                }
+                refreshShapeStyleButton()
             }
         }
         undoButton = chromeButton(R.drawable.ic_undo).apply { setOnClickListener { binding.paintView.undo() } }
@@ -408,15 +687,18 @@ class MainActivity : AppCompatActivity() {
             }
         }
         saveButton = chromeButton(R.drawable.ic_save).apply { setOnClickListener { onSaveClicked() } }
+        // Parent-only, and only when the extra is switched on: picking a photo opens
+        // the system picker, which is the child's whole gallery.
+        photoButton = chromeButton(R.drawable.ic_photo).apply { setOnClickListener { onPhotoClicked() } }
         // Listeners are assigned in applyKidMode: this button means "hand over the
         // phone" in parent mode and "give it back" in kid mode.
         kidModeButton = chromeButton(R.drawable.ic_lock)
 
-        for (b in listOf(fillToggle, undoButton, redoButton, clear, saveButton, kidModeButton)) {
+        for (b in listOf(fillToggle, undoButton, redoButton, clear, saveButton, photoButton, kidModeButton)) {
             b.layoutParams = cellParams(52)
             binding.actionRow.addView(b)
         }
-        fillToggle.setSelectedLook(false)
+        refreshShapeStyleButton()
     }
 
     /** One button style for every tool and action, so nothing looks out of place. */
@@ -440,6 +722,19 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun refreshShapeStyleButton() {
+        val style = binding.paintView.shapeStyle
+        fillToggle.setImageResource(
+            when (style) {
+                ShapeStyle.FILLED -> R.drawable.ic_shape_filled
+                ShapeStyle.FILLED_OUTLINE -> R.drawable.ic_shape_filled_outline
+                ShapeStyle.OUTLINE -> R.drawable.ic_shape_outline
+            }
+        )
+        // Outline is the plainest of the three, so it reads as the unset state.
+        fillToggle.setSelectedLook(style != ShapeStyle.OUTLINE)
+    }
+
     // ---- selection ------------------------------------------------------------
 
     private fun selectColor(color: Int) {
@@ -458,6 +753,11 @@ class MainActivity : AppCompatActivity() {
     private fun selectTool(tool: Tool) {
         binding.paintView.tool = tool
         for ((buttonTool, view) in toolButtons) view.setSelectedLook(buttonTool == tool)
+        // The drawer button wears whatever was picked out of it, so the toolbar
+        // never hides which tool is selected.
+        val fromDrawer = moreTools().firstOrNull { it.first == tool }
+        moreButton.setImageResource(fromDrawer?.second ?: R.drawable.ic_more)
+        moreButton.setSelectedLook(fromDrawer != null)
         // Only shape tools care about fill-vs-outline; dim the toggle otherwise.
         val shapeSelected = tool.asShape() != null && tool != Tool.LINE
         fillToggle.alpha = if (shapeSelected) 1f else 0.4f
@@ -484,18 +784,28 @@ class MainActivity : AppCompatActivity() {
 
     // ---- text tool ------------------------------------------------------------
 
-    private fun promptForText(x: Float, y: Float) {
+    private fun promptForText(existing: String) {
         val input = EditText(this).apply {
-            setSingleLine()
+            // Multi-line on purpose: Enter has to insert a line break rather than
+            // dismiss the dialog, because a typed break is the only way to say
+            // where a line ends that the box width cannot express.
+            inputType = InputType.TYPE_CLASS_TEXT or
+                InputType.TYPE_TEXT_FLAG_MULTI_LINE or
+                InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+            setHorizontallyScrolling(false)
+            maxLines = 6
+            setText(existing)
+            setSelection(existing.length)
             setPadding(dp(20), dp(16), dp(20), dp(16))
         }
         val dialog = AlertDialog.Builder(this)
             .setTitle(R.string.text_dialog_title)
             .setView(input)
             .setPositiveButton(R.string.ok) { _, _ ->
-                binding.paintView.addText(input.text.toString(), x, y)
+                binding.paintView.addText(input.text.toString())
             }
-            .setNegativeButton(R.string.cancel, null)
+            .setNegativeButton(R.string.cancel) { _, _ -> binding.paintView.cancelText() }
+            .setOnCancelListener { binding.paintView.cancelText() }
             .create()
 
         // The keyboard comes up with the dialog. Asking for the field to be tapped
@@ -587,6 +897,10 @@ class MainActivity : AppCompatActivity() {
         const val AUTOSAVE_NAME = "canvas.png"
         const val AUTOSAVE_DELAY_MS = 1200L
 
+        /** Long enough to fetch a grown-up, short enough not to be a punishment. */
+        const val ALARM_MS = 8000L
+        val VIBRATE_PATTERN = longArrayOf(0, 400, 250, 400, 250, 700)
+
         /** Every toolbar glyph is tinted this, so no icon reads as a stray emoji. */
         const val ICON_TINT = 0xFF4A3B2E.toInt()
 
@@ -600,17 +914,46 @@ class MainActivity : AppCompatActivity() {
             0xFF1A237E.toInt(), 0xFF8E24AA.toInt(), 0xFFEC407A.toInt(), 0xFFFFC1CC.toInt()
         )
 
+        /**
+         * The toolbar itself: what a child reaches for without thinking. Everything
+         * else is one tap away behind the "..." button rather than on screen.
+         */
         val TOOLS = listOf(
             Tool.BRUSH to R.drawable.ic_brush,
             Tool.FILL to R.drawable.ic_bucket,
             Tool.ERASER to R.drawable.ic_eraser,
             Tool.TEXT to R.drawable.ic_text,
+            Tool.SELECT to R.drawable.ic_select,
             Tool.LINE to R.drawable.ic_line,
             Tool.RECT to R.drawable.ic_rect,
             Tool.OVAL to R.drawable.ic_oval,
-            Tool.TRIANGLE to R.drawable.ic_triangle,
+            Tool.TRIANGLE to R.drawable.ic_triangle
+        )
+
+        /** The drawer behind "...". Always available, extras or not. */
+        val MORE_TOOLS = listOf(
             Tool.STAR to R.drawable.ic_star,
-            Tool.HEART to R.drawable.ic_heart
+            Tool.HEART to R.drawable.ic_heart,
+            Tool.DIAMOND to R.drawable.ic_diamond,
+            Tool.PENTAGON to R.drawable.ic_pentagon,
+            Tool.HEXAGON to R.drawable.ic_hexagon,
+            Tool.ARROW to R.drawable.ic_arrow,
+            Tool.CLOUD to R.drawable.ic_cloud,
+            Tool.MOON to R.drawable.ic_moon,
+            Tool.SUN to R.drawable.ic_sun,
+            Tool.LIGHTNING to R.drawable.ic_lightning,
+            Tool.FLOWER to R.drawable.ic_flower,
+            Tool.BUBBLE to R.drawable.ic_bubble
+        )
+
+        const val MORE_PER_ROW = 4
+
+        /** Added to the drawer only when a grown-up switches the extras on. */
+        val FUN_TOOLS = listOf(
+            Tool.GLASSES to R.drawable.ic_glasses,
+            Tool.MUSTACHE to R.drawable.ic_mustache,
+            Tool.UMBRELLA to R.drawable.ic_umbrella,
+            Tool.CROWN to R.drawable.ic_crown
         )
     }
 }

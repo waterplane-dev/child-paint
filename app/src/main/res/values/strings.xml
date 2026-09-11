@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Little Painter</string>
+    <string name="more_shapes_title">More shapes</string>
     <string name="text_dialog_title">What should it say?</string>
     <string name="ok">OK</string>
     <string name="cancel">Cancel</string>
@@ -10,15 +11,13 @@
     <string name="cleared">New picture. Undo brings the old one back.</string>
     <string name="storage_needed">Saving needs permission to write to your gallery</string>
 
-    <string name="lock_glyph">\uD83D\uDD12</string>
-    <string name="time_up_glyph">\u23F3</string>
     <string name="time_up_title">Time is up!</string>
     <string name="time_up_hint">The drawing is safe. A grown-up can give you more time.</string>
     <string name="last_minute">Last 1 minute started</string>
     <string name="grown_ups">Grown-ups</string>
 
     <string name="kid_setup_title">Start kid mode</string>
-    <string name="kid_setup_explainer">One canvas, no saving. Home and Back stop working, and closing the app comes straight back here with the timer still running.</string>
+    <string name="kid_setup_explainer">One canvas, no saving. Back stops working, Home too once Android confirms pinning, and closing the app comes straight back here with the timer still running.</string>
     <string name="kid_setup_duration">How long?</string>
     <string name="duration_5_min">5 min</string>
     <string name="duration_15_min">15 min</string>
@@ -34,10 +33,11 @@
     <string name="kid_setup_custom_error">Enter 1 to 1440 minutes</string>
     <string name="kid_setup_require_pin">Ask for a PIN to unlock</string>
     <string name="kid_setup_require_math">Ask a maths question to unlock</string>
+    <string name="kid_setup_alert_vibrate">Buzz when the time is up</string>
+    <string name="kid_setup_alert_sound">Play an alarm when the time is up</string>
     <string name="kid_setup_start">Start</string>
     <string name="kid_mode_started">Kid mode on. Hold the lock to leave.</string>
     <string name="kid_mode_ended">Kid mode off</string>
-    <string name="pin_hold_hint">Press and hold to unlock</string>
 
     <string name="unlock_title">Grown-ups only</string>
     <string name="unlock_math">What is %1$d + %2$d?</string>
@@ -45,7 +45,27 @@
     <string name="unlock_confirm">Leave kid mode?</string>
     <string name="unlock_wrong">Not right</string>
     <string name="unlock_blocked_title">Too many tries</string>
-    <string name="unlock_blocked_minutes">Wait %1$d more minutes before trying again.</string>
-    <string name="unlock_blocked_seconds">Wait %1$d more seconds before trying again.</string>
+    <plurals name="unlock_blocked_minutes">
+        <item quantity="one">Wait %1$d more minute before trying again.</item>
+        <item quantity="other">Wait %1$d more minutes before trying again.</item>
+    </plurals>
+    <plurals name="unlock_blocked_seconds">
+        <item quantity="one">Wait %1$d more second before trying again.</item>
+        <item quantity="other">Wait %1$d more seconds before trying again.</item>
+    </plurals>
     <string name="unlock_hold_hint">Press and hold the lock to leave kid mode</string>
+
+    <string name="kid_setup_extras_hint">Tip: press and hold the lock for grown-up extras.</string>
+    <string name="extras_title">Grown-up extras</string>
+    <string name="extras_explainer">Both are off until you switch them on. Pick a photo before you hand the phone over — the picker is hidden in kid mode.</string>
+    <string name="extras_version">Build %1$s (%2$d)</string>
+    <string name="extras_photo">Paint on a photo</string>
+    <string name="extras_fun_shapes">Dress-up shapes (glasses, moustache, crown\u2026)</string>
+    <string name="extras_hide_toolbar">Hide the tools until the handle is tapped</string>
+    <string name="show_tools">Show the tools</string>
+    <string name="photo_title">Paint on a photo</string>
+    <string name="photo_confirm">Both start a new page: whatever is on the paper now is replaced, and undo will not bring it back.</string>
+    <string name="photo_pick">Pick a photo</string>
+    <string name="photo_blank">Plain paper</string>
+    <string name="photo_failed">Could not open that photo</string>
 </resources>
