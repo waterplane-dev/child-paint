@@ -7,6 +7,11 @@
     <string name="cancel">Cancel</string>
     <string name="saved">Picture saved</string>
     <string name="save_failed">Could not save the picture</string>
+    <string name="pictures_title">My pictures</string>
+    <string name="pictures_save">Save this picture</string>
+    <string name="picture_open_failed">Could not open that picture</string>
+    <string name="picture_delete_title">Throw this picture away?</string>
+    <string name="picture_delete">Throw away</string>
     <string name="clear_hold_hint">Press and hold to start a new picture</string>
     <string name="cleared">New picture. Undo brings the old one back.</string>
     <string name="storage_needed">Saving needs permission to write to your gallery</string>

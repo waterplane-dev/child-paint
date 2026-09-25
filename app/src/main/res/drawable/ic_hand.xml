@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The grab hand. It replaced the dashed marquee because the tool is now mostly
+     about picking up a thing that is already on the paper; the rectangle is what
+     it does when the finger lands on nothing. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <path android:pathData="M8,13.5 L8,5.5 A1.5,1.5 0 0 1 11,5.5 L11,11 M11,11 L11,4 A1.5,1.5 0 0 1 14,4 L14,11 M14,11 L14,5.5 A1.5,1.5 0 0 1 17,5.5 L17,12 M17,12 L17,8.5 A1.5,1.5 0 0 1 20,8.5 L20,15 C20,19 17,22 13,22 L12,22 C9.5,22 8,21 6.5,19 L3.6,14.6 A1.6,1.6 0 0 1 6,12.6 L8,14.5"
+        android:strokeColor="#000000" android:strokeWidth="1.8"
+        android:strokeLineCap="round" android:strokeLineJoin="round" />
+</vector>

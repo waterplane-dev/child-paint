@@ -66,6 +66,18 @@ class MainActivity : AppCompatActivity() {
 
     private val kidMode by lazy { KidModeState(this) }
     private val settings by lazy { ParentSettings(this) }
+    private val pictures by lazy { PictureStore(this) }
+    private val picturePrefs by lazy { getSharedPreferences(PICTURE_PREFS, MODE_PRIVATE) }
+
+    /**
+     * The saved picture the paper came from, so saving again updates it instead of
+     * piling up copies. Dropped whenever the paper becomes a new page — clear, plain
+     * paper, a photo — so a new drawing never overwrites the one it replaced.
+     * Persisted: the canvas itself survives a restart, and so must this.
+     */
+    private var currentPictureId: String?
+        get() = picturePrefs.getString(KEY_CURRENT_PICTURE, null)
+        set(value) { picturePrefs.edit().putString(KEY_CURRENT_PICTURE, value).apply() }
     /** Autosave encoding and photo decoding both go here: off the UI thread, in order. */
     private val ioExecutor = Executors.newSingleThreadExecutor()
     private val autosave = Runnable { persistPicture() }
@@ -376,24 +388,57 @@ class MainActivity : AppCompatActivity() {
     private fun persistPicture() {
         // Copy on the UI thread (cheap), encode off it (not cheap).
         val bitmap = binding.paintView.exportBitmap() ?: return
-        val target = File(filesDir, AUTOSAVE_NAME)
+        val session = binding.paintView.saveSession()
         if (ioExecutor.isShutdown) return
         ioExecutor.execute {
             try {
-                FileOutputStream(target).use { out ->
+                FileOutputStream(File(filesDir, AUTOSAVE_NAME)).use { out ->
                     bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
                 }
+                if (session != null) persistSession(session)
             } catch (e: Exception) {
                 // A failed autosave must never take the app down mid-drawing.
             }
         }
     }
 
+    /**
+     * The op list goes next to the flat picture, so the things in it can still be
+     * picked up after a restart. The photo under it is written once per photo,
+     * under its own name, *before* the list that points at it; a kill between the
+     * two leaves the old list pointing at the old photo, never a mismatched pair.
+     */
+    private fun persistSession(session: PaintCanvasView.SavedSession) {
+        val paperName = session.paperId?.let { "$PAPER_PREFIX$it.png" }
+        if (paperName != null && session.paper != null) {
+            val paperFile = File(filesDir, paperName)
+            if (!paperFile.exists()) {
+                val temp = File(filesDir, "$paperName.tmp")
+                FileOutputStream(temp).use { session.paper.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                temp.renameTo(paperFile)
+            }
+        }
+        val temp = File(filesDir, "$SESSION_NAME.tmp")
+        temp.writeText(session.json)
+        temp.renameTo(File(filesDir, SESSION_NAME))
+        filesDir.listFiles()?.forEach { file ->
+            if (file.name.startsWith(PAPER_PREFIX) && file.name != paperName) file.delete()
+        }
+    }
+
     private fun restoreLastPicture() {
-        val file = File(filesDir, AUTOSAVE_NAME)
-        if (!file.exists()) return
-        val saved = BitmapFactory.decodeFile(file.absolutePath) ?: return
-        binding.paintView.restorePicture(saved)
+        val flatFile = File(filesDir, AUTOSAVE_NAME)
+        val flat = if (flatFile.exists()) BitmapFactory.decodeFile(flatFile.absolutePath) else null
+        val sessionFile = File(filesDir, SESSION_NAME)
+        val session = if (sessionFile.exists()) {
+            try { OpCodec.decode(sessionFile.readText()) } catch (e: Exception) { null }
+        } else null
+        val paper = session?.paperId?.let { id ->
+            val file = File(filesDir, "$PAPER_PREFIX$id.png")
+            if (file.exists()) BitmapFactory.decodeFile(file.absolutePath) else null
+        }
+        if (flat == null && session == null) return
+        binding.paintView.restoreSession(session, paper, flat)
     }
 
     /**
@@ -502,6 +547,7 @@ class MainActivity : AppCompatActivity() {
             // undoing, and nothing on screen says even that.
             .setNeutralButton(R.string.photo_blank) { _, _ ->
                 binding.paintView.useBlankPaper()
+                currentPictureId = null
                 refreshHistoryButtons()
                 scheduleAutosave()
             }
@@ -528,6 +574,7 @@ class MainActivity : AppCompatActivity() {
                     return@runOnUiThread
                 }
                 binding.paintView.setPaperPicture(paper)
+                currentPictureId = null
                 refreshHistoryButtons()
                 scheduleAutosave()
             }
@@ -682,11 +729,12 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { toast(getString(R.string.clear_hold_hint)) }
             setOnLongClickListener {
                 binding.paintView.clearPaper()
+                currentPictureId = null
                 toast(getString(R.string.cleared))
                 true
             }
         }
-        saveButton = chromeButton(R.drawable.ic_save).apply { setOnClickListener { onSaveClicked() } }
+        saveButton = chromeButton(R.drawable.ic_save).apply { setOnClickListener { showPictures() } }
         // Parent-only, and only when the extra is switched on: picking a photo opens
         // the system picker, which is the child's whole gallery.
         photoButton = chromeButton(R.drawable.ic_photo).apply { setOnClickListener { onPhotoClicked() } }
@@ -848,8 +896,159 @@ class MainActivity : AppCompatActivity() {
         } else {
             saveToLegacyPictures(bitmap, name)
         }
+        storeCurrentPicture(bitmap, currentPictureId ?: newPictureId())
         toast(getString(if (ok) R.string.saved else R.string.save_failed))
     }
+
+    // ---- my pictures ----------------------------------------------------------
+
+    /**
+     * The save button's grid: "save this one" first, then every picture kept in the
+     * app, newest first. Tapping one opens it with its things still separate, so
+     * the hand can pick them up again; holding one offers to throw it away.
+     */
+    private fun showPictures() {
+        lateinit var dialog: AlertDialog
+        val columns = 3
+        val grid = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(4), dp(12), dp(4))
+        }
+        val tiles = mutableListOf<View>()
+        tiles += pictureTile(null, getString(R.string.pictures_save), selected = false).apply {
+            setOnClickListener {
+                dialog.dismiss()
+                onSaveClicked()
+            }
+        }
+        val current = currentPictureId
+        for (entry in pictures.list()) {
+            tiles += pictureTile(entry.thumb, null, selected = entry.id == current).apply {
+                setOnClickListener {
+                    dialog.dismiss()
+                    openPicture(entry.id)
+                }
+                setOnLongClickListener {
+                    confirmDeletePicture(entry.id) {
+                        dialog.dismiss()
+                        showPictures()
+                    }
+                    true
+                }
+            }
+        }
+        for (rowTiles in tiles.chunked(columns)) {
+            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            for (tile in rowTiles) {
+                tile.layoutParams = LinearLayout.LayoutParams(0, dp(170), 1f).apply { setMargins(dp(4), dp(4), dp(4), dp(4)) }
+                row.addView(tile)
+            }
+            // Pad the last row so its tiles keep the same width as the rest.
+            repeat(columns - rowTiles.size) {
+                row.addView(View(this), LinearLayout.LayoutParams(0, dp(170), 1f).apply { setMargins(dp(4), dp(4), dp(4), dp(4)) })
+            }
+            grid.addView(row)
+        }
+        dialog = AlertDialog.Builder(this)
+            .setTitle(R.string.pictures_title)
+            .setView(android.widget.ScrollView(this).apply { addView(grid) })
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    /** One grid cell: a thumbnail, or the save icon with [label] under it. */
+    private fun pictureTile(thumb: File?, label: String?, selected: Boolean): View {
+        val tile = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            isClickable = true
+            isFocusable = true
+            setSelectedLook(selected)
+            setPadding(dp(6), dp(6), dp(6), dp(6))
+        }
+        val image = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            if (thumb != null) {
+                BitmapFactory.decodeFile(thumb.absolutePath)?.let { setImageBitmap(it) }
+            } else {
+                setImageResource(R.drawable.ic_save)
+                imageTintList = ColorStateList.valueOf(ICON_TINT)
+                setPadding(dp(24), dp(24), dp(24), dp(8))
+            }
+        }
+        tile.addView(image, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+        if (label != null) {
+            tile.addView(TextView(this).apply {
+                text = label
+                gravity = Gravity.CENTER
+                setTextColor(ICON_TINT)
+            })
+        }
+        return tile
+    }
+
+    /**
+     * Writes the paper into the app's own pictures under [id]. The copy happens
+     * here on the UI thread; encoding goes to the worker like autosave.
+     */
+    private fun storeCurrentPicture(flat: Bitmap, id: String) {
+        val session = binding.paintView.saveSession()
+        currentPictureId = id
+        if (ioExecutor.isShutdown) return
+        ioExecutor.execute {
+            try {
+                pictures.save(id, session, flat)
+            } catch (e: Exception) {
+                runOnUiThread { toast(getString(R.string.save_failed)) }
+            }
+        }
+    }
+
+    /**
+     * Opens a kept picture in place of the paper. Whatever is on the paper now is
+     * put away first — under its own picture if it came from one, as a new one if
+     * not — so opening an old drawing never costs the current one. A blank page is
+     * not worth a tile and is skipped.
+     */
+    private fun openPicture(id: String) {
+        val flat = binding.paintView.exportBitmap()
+        if (flat != null && !isBlank(flat)) storeCurrentPicture(flat, currentPictureId ?: newPictureId())
+        if (ioExecutor.isShutdown) return
+        ioExecutor.execute {
+            val loaded = try { pictures.load(id) } catch (e: Exception) { null }
+            runOnUiThread {
+                if (loaded == null) {
+                    toast(getString(R.string.picture_open_failed))
+                    return@runOnUiThread
+                }
+                binding.paintView.restoreSession(loaded.session, loaded.paper, loaded.flat)
+                currentPictureId = id
+                refreshHistoryButtons()
+            }
+        }
+    }
+
+    private fun confirmDeletePicture(id: String, then: () -> Unit) {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.picture_delete_title)
+            .setPositiveButton(R.string.picture_delete) { _, _ ->
+                if (currentPictureId == id) currentPictureId = null
+                // After any pending save of this same picture, or it comes back.
+                if (!ioExecutor.isShutdown) ioExecutor.execute { pictures.delete(id) }
+                then()
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun isBlank(bitmap: Bitmap): Boolean {
+        val paper = binding.paintView.paperColor
+        val pixels = IntArray(bitmap.width * bitmap.height)
+        bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+        return pixels.all { it == paper }
+    }
+
+    private fun newPictureId() = "p${System.currentTimeMillis()}"
 
     private fun saveViaMediaStore(bitmap: Bitmap, name: String): Boolean {
         val values = ContentValues().apply {
@@ -895,6 +1094,12 @@ class MainActivity : AppCompatActivity() {
         const val GALLERY_FOLDER = "Little Painter"
 
         const val AUTOSAVE_NAME = "canvas.png"
+        const val PICTURE_PREFS = "pictures"
+        const val KEY_CURRENT_PICTURE = "current"
+        /** The op list behind the flat picture, so its things stay pickable after a restart. */
+        const val SESSION_NAME = "canvas-ops.json"
+        /** The photo under the ops, one file per photo: paper-<id>.png. */
+        const val PAPER_PREFIX = "paper-"
         const val AUTOSAVE_DELAY_MS = 1200L
 
         /** Long enough to fetch a grown-up, short enough not to be a punishment. */
@@ -923,7 +1128,7 @@ class MainActivity : AppCompatActivity() {
             Tool.FILL to R.drawable.ic_bucket,
             Tool.ERASER to R.drawable.ic_eraser,
             Tool.TEXT to R.drawable.ic_text,
-            Tool.SELECT to R.drawable.ic_select,
+            Tool.SELECT to R.drawable.ic_hand,
             Tool.LINE to R.drawable.ic_line,
             Tool.RECT to R.drawable.ic_rect,
             Tool.OVAL to R.drawable.ic_oval,

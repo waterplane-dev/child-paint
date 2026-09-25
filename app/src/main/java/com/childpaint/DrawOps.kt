@@ -6,8 +6,10 @@ import android.graphics.Color
 import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.PointF
 import android.graphics.Rect
 import android.graphics.RectF
+import android.graphics.Region
 import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextPaint
@@ -75,34 +77,94 @@ fun Tool.asShape(): ShapeKind? = when (this) {
  * One user action. The canvas keeps a list of these instead of a stack of bitmap
  * snapshots: undo replays the list onto a blank bitmap, which costs a few ms but
  * keeps memory flat (a full-screen ARGB snapshot is ~8 MB apiece).
+ *
+ * Every op is plain data — no Path, no Bitmap that could not be rebuilt — so the
+ * list can be written to disk and a picture comes back after a restart as the
+ * same separate things it was drawn as, still pickable by the hand.
  */
 sealed class DrawOp {
     abstract fun apply(canvas: Canvas, bitmap: Bitmap)
+
+    /** The area this op paints, or null when that is not knowable up front (a fill). */
+    open fun bounds(): RectF? = null
+
+    /** True if the ink this op put down covers ([x], [y]). Only objects answer. */
+    open fun hits(x: Float, y: Float): Boolean = false
 }
 
 class StrokeOp(
-    val path: Path,
-    private val color: Int,
-    private val width: Float
+    /** Raw touch points, x/y interleaved; the smoothing is rebuilt by [strokePath]. */
+    val points: FloatArray,
+    val color: Int,
+    val width: Float,
+    /** An eraser stroke is a stroke in the paper colour, not a thing to pick up. */
+    val eraser: Boolean = false
 ) : DrawOp() {
+    val path: Path by lazy { strokePath(points) }
+
     override fun apply(canvas: Canvas, bitmap: Bitmap) {
         canvas.drawPath(path, strokePaint(color, width))
     }
+
+    override fun bounds(): RectF = RectF().also {
+        path.computeBounds(it, true)
+        it.inset(-width / 2f - 1f, -width / 2f - 1f)
+    }
+
+    override fun hits(x: Float, y: Float): Boolean {
+        if (eraser) return false
+        val outline = Path()
+        strokePaint(color, width).getFillPath(path, outline)
+        return regionContains(outline, x, y)
+    }
+
+    /** The same stroke carried by [transform]; the line gets fatter or thinner with it. */
+    fun mapped(transform: Transform): StrokeOp {
+        val out = FloatArray(points.size)
+        transform.matrix().mapPoints(out, points)
+        return StrokeOp(out, color, width * transform.scale, eraser)
+    }
+}
+
+/**
+ * The freehand path through [points]: quadratic curves through each midpoint, the
+ * same smoothing the live preview draws, so the stroke that lands is the stroke
+ * that was watched being drawn.
+ */
+fun strokePath(points: FloatArray): Path = Path().apply {
+    val n = points.size / 2
+    if (n == 0) return@apply
+    moveTo(points[0], points[1])
+    for (k in 1 until n - 1) {
+        val px = points[2 * k - 2]
+        val py = points[2 * k - 1]
+        quadTo(px, py, (px + points[2 * k]) / 2f, (py + points[2 * k + 1]) / 2f)
+    }
+    if (n > 1) lineTo(points[2 * n - 2], points[2 * n - 1])
 }
 
 class ShapeOp(
-    private val kind: ShapeKind,
-    private val x0: Float,
-    private val y0: Float,
-    private val x1: Float,
-    private val y1: Float,
-    private val color: Int,
-    private val width: Float,
-    private val style: ShapeStyle,
-    private val angle: Float = 0f
+    val kind: ShapeKind,
+    val x0: Float,
+    val y0: Float,
+    val x1: Float,
+    val y1: Float,
+    val color: Int,
+    val width: Float,
+    val style: ShapeStyle,
+    val angle: Float = 0f
 ) : DrawOp() {
     override fun apply(canvas: Canvas, bitmap: Bitmap) {
         drawShape(canvas, kind, x0, y0, x1, y1, color, width, style, angle)
+    }
+
+    override fun bounds(): RectF = rotatedBounds(
+        RectF(minOf(x0, x1), minOf(y0, y1), maxOf(x0, x1), maxOf(y0, y1)), angle
+    ).also { it.inset(-width / 2f - 1f, -width / 2f - 1f) }
+
+    override fun hits(x: Float, y: Float): Boolean {
+        val local = rotateAbout(x, y, (x0 + x1) / 2f, (y0 + y1) / 2f, -angle)
+        return regionContains(shapeHitPath(kind, x0, y0, x1, y1, width), local.x, local.y)
     }
 }
 
@@ -123,16 +185,28 @@ class TextOp(
 ) : DrawOp() {
     override fun apply(canvas: Canvas, bitmap: Bitmap) =
         drawTextBox(canvas, text, box, color, size, angle)
+
+    override fun bounds(): RectF = rotatedBounds(box, angle)
+
+    override fun hits(x: Float, y: Float): Boolean {
+        val local = rotateAbout(x, y, box.centerX(), box.centerY(), -angle)
+        return box.contains(local.x, local.y)
+    }
 }
 
 class FillOp(
-    private val x: Int,
-    private val y: Int,
-    private val color: Int,
-    private val tolerance: Int
+    val x: Int,
+    val y: Int,
+    val color: Int,
+    val tolerance: Int
 ) : DrawOp() {
     override fun apply(canvas: Canvas, bitmap: Bitmap) {
         FloodFill.fill(bitmap, x, y, color, tolerance)
+    }
+
+    /** The same fill into a bitmap whose top-left pixel is ([originX], [originY]) of the paper. */
+    fun applyAt(bitmap: Bitmap, originX: Int, originY: Int) {
+        FloodFill.fill(bitmap, x - originX, y - originY, color, tolerance)
     }
 }
 
@@ -148,9 +222,9 @@ class FillOp(
 class MoveOp(
     /** Where the pixels were cut from. Undo re-lifts exactly this rectangle. */
     val src: Rect,
-    private val dst: RectF,
-    private val angle: Float,
-    private val paperColor: Int
+    val dst: RectF,
+    val angle: Float,
+    val paperColor: Int
 ) : DrawOp() {
     override fun apply(canvas: Canvas, bitmap: Bitmap) {
         // Normally the identity. It bites when the canvas has since changed height
@@ -166,12 +240,152 @@ class MoveOp(
         drawPiece(canvas, piece, dst, angle)
         piece.recycle()
     }
+
+    /** Everything this op touched: the hole it left and where the piece went. */
+    override fun bounds(): RectF = RectF(src).apply { union(rotatedBounds(dst, angle)) }
 }
 
-class ClearOp(private val color: Int) : DrawOp() {
+/**
+ * Paints a rectangle of paper over whatever was there: a selection thrown away.
+ * Like [MoveOp] it is about pixels, not things, so the hand treats it the same.
+ */
+class EraseOp(val rect: Rect, val paperColor: Int) : DrawOp() {
+    override fun apply(canvas: Canvas, bitmap: Bitmap) {
+        canvas.drawRect(rect, fillPaint(paperColor))
+    }
+
+    override fun bounds(): RectF = RectF(rect)
+}
+
+class ClearOp(val color: Int) : DrawOp() {
     override fun apply(canvas: Canvas, bitmap: Bitmap) {
         canvas.drawColor(color)
     }
+}
+
+/**
+ * Several ops picked up together — a circle and the face painted on it — and put
+ * down as one thing.
+ *
+ * The members are rendered onto their own transparent layer and the layer is
+ * placed, rather than each member being moved separately. That is what keeps a
+ * paint-bucket fill honest: inside the layer the fill only ever meets the things
+ * it was carried with, so a red heart moved onto a red sun does not flood into it.
+ * Members stay in the coordinates they were drawn at; [frame] is the patch of
+ * paper they were lifted from and [dst]/[angle] is where that patch now sits.
+ */
+class GroupOp(
+    val members: List<DrawOp>,
+    val frame: Rect,
+    val dst: RectF,
+    val angle: Float,
+    prebuilt: Bitmap? = null
+) : DrawOp() {
+    /** Built once: the members never change, and replay would otherwise re-run every fill. */
+    val layer: Bitmap by lazy { prebuilt ?: renderLayer(members, frame) }
+
+    override fun apply(canvas: Canvas, bitmap: Bitmap) = drawPiece(canvas, layer, dst, angle)
+
+    override fun bounds(): RectF = rotatedBounds(dst, angle)
+
+    /** Hit on the layer's own pixels, so a tap on a gap inside the group misses it. */
+    override fun hits(x: Float, y: Float): Boolean {
+        val local = rotateAbout(x, y, dst.centerX(), dst.centerY(), -angle)
+        if (!dst.contains(local.x, local.y)) return false
+        val lx = ((local.x - dst.left) / dst.width() * layer.width).toInt()
+        val ly = ((local.y - dst.top) / dst.height() * layer.height).toInt()
+        if (lx !in 0 until layer.width || ly !in 0 until layer.height) return false
+        return Color.alpha(layer.getPixel(lx, ly)) > 0
+    }
+}
+
+/** Renders [members] onto a transparent bitmap covering [frame] of the paper. */
+fun renderLayer(members: List<DrawOp>, frame: Rect): Bitmap {
+    val layer = Bitmap.createBitmap(
+        frame.width().coerceAtLeast(1), frame.height().coerceAtLeast(1), Bitmap.Config.ARGB_8888
+    )
+    val canvas = Canvas(layer)
+    canvas.translate(-frame.left.toFloat(), -frame.top.toFloat())
+    for (member in members) drawMember(member, canvas, layer, frame)
+    return layer
+}
+
+/** One member onto a layer; a fill has to be told where the layer sits. */
+fun drawMember(member: DrawOp, canvas: Canvas, layer: Bitmap, frame: Rect) {
+    if (member is FillOp) member.applyAt(layer, frame.left, frame.top) else member.apply(canvas, layer)
+}
+
+/**
+ * A thing that was picked up again and put down somewhere else.
+ *
+ * The ops it was made from stay where they are in the list — replay skips the
+ * indices in [hidden] — so undoing the move is just popping this op, and the
+ * originals reappear exactly as they were. [content] is the thing at its new
+ * place, or null when it was picked up and deleted (emptied text).
+ */
+class RelocateOp(
+    val hidden: IntArray,
+    val content: DrawOp?
+) : DrawOp() {
+    override fun apply(canvas: Canvas, bitmap: Bitmap) {
+        content?.apply(canvas, bitmap)
+    }
+
+    override fun bounds(): RectF? = content?.bounds()
+
+    override fun hits(x: Float, y: Float): Boolean = content?.hits(x, y) ?: false
+}
+
+/**
+ * Where a picked-up stroke went: moved so its old centre lands on [toX]/[toY],
+ * scaled evenly by [scale] and turned [angle] degrees about that centre. Even
+ * scaling on purpose — a carried face would otherwise squash.
+ */
+class Transform(
+    val fromX: Float, val fromY: Float,
+    val toX: Float, val toY: Float,
+    val scale: Float,
+    val angle: Float
+) {
+    fun matrix(): Matrix = Matrix().apply {
+        setTranslate(-fromX, -fromY)
+        postScale(scale, scale)
+        postRotate(angle)
+        postTranslate(toX, toY)
+    }
+}
+
+/** ([x], [y]) turned [degrees] about ([cx], [cy]). */
+fun rotateAbout(x: Float, y: Float, cx: Float, cy: Float, degrees: Float): PointF {
+    if (degrees == 0f) return PointF(x, y)
+    val radians = Math.toRadians(degrees.toDouble())
+    val dx = x - cx
+    val dy = y - cy
+    return PointF(
+        cx + (dx * cos(radians) - dy * sin(radians)).toFloat(),
+        cy + (dx * sin(radians) + dy * cos(radians)).toFloat()
+    )
+}
+
+/** The upright box that holds [box] once it is turned [angle] degrees about its centre. */
+fun rotatedBounds(box: RectF, angle: Float): RectF {
+    if (angle == 0f) return RectF(box)
+    val corners = floatArrayOf(box.left, box.top, box.right, box.top, box.right, box.bottom, box.left, box.bottom)
+    Matrix().apply { setRotate(angle, box.centerX(), box.centerY()) }.mapPoints(corners)
+    val out = RectF(corners[0], corners[1], corners[0], corners[1])
+    for (i in 1 until 4) out.union(corners[2 * i], corners[2 * i + 1])
+    return out
+}
+
+private fun regionContains(path: Path, x: Float, y: Float): Boolean {
+    val bounds = RectF()
+    path.computeBounds(bounds, true)
+    if (!bounds.contains(x, y)) return false
+    val clip = Region(
+        bounds.left.toInt() - 1, bounds.top.toInt() - 1,
+        bounds.right.toInt() + 1, bounds.bottom.toInt() + 1
+    )
+    return Region().apply { setPath(path, clip) }.contains(x.toInt(), y.toInt())
 }
 
 fun textPaint(color: Int, size: Float): TextPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -308,6 +522,30 @@ fun drawShape(
     // They are always stroked in the chosen colour, whatever the body is doing,
     // because filling them draws nothing at all.
     shapeWires(kind, rect)?.let { canvas.drawPath(it, strokePaint(color, width)) }
+}
+
+/**
+ * Where a finger counts as touching the shape, in its own upright frame: the
+ * inside, the rim, and any wire parts. The inside counts even for an outline — a
+ * child reaches for the middle of a ring, not for its line.
+ */
+fun shapeHitPath(kind: ShapeKind, x0: Float, y0: Float, x1: Float, y1: Float, width: Float): Path {
+    val out = Path()
+    val paint = strokePaint(Color.BLACK, width)
+    if (kind == ShapeKind.LINE) {
+        paint.getFillPath(Path().apply { moveTo(x0, y0); lineTo(x1, y1) }, out)
+        return out
+    }
+    val rect = RectF(minOf(x0, x1), minOf(y0, y1), maxOf(x0, x1), maxOf(y0, y1))
+    val body = shapePath(kind, rect)
+    paint.getFillPath(body, out)
+    out.op(body, Path.Op.UNION)
+    shapeWires(kind, rect)?.let { wires ->
+        val stroked = Path()
+        paint.getFillPath(wires, stroked)
+        out.op(stroked, Path.Op.UNION)
+    }
+    return out
 }
 
 private fun shapePath(kind: ShapeKind, r: RectF): Path = when (kind) {

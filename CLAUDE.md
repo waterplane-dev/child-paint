@@ -42,6 +42,11 @@ shippable and that Play rejects. See `docs/release-checklist.md`.
 - `DrawOps.kt` — `Tool`/`ShapeKind`/`ShapeStyle` enums and the `DrawOp` types,
   plus the shape path maths (star, heart, triangle, and the opt-in dress-up
   shapes).
+- `ObjectPicker.kt` — the hand tool's brain: which op is under a finger, and
+  what later ops sit on it and have to come along when it is picked up.
+- `OpCodec.kt` — the op list to JSON and back, so objects survive a restart.
+- `PictureStore.kt` — "My pictures": saved drawings kept in `filesDir/pictures/`
+  as op lists, so an old picture opens with its things still pickable.
 - `FloodFill.kt` — scanline paint bucket. Matches within a colour tolerance on
   purpose: strokes are anti-aliased, so an exact-match fill would stop at the
   first blended pixel and leave a halo.
@@ -67,8 +72,13 @@ one toolbar. Do not reintroduce emoji here.
 - The activity is **locked to portrait**. Op coordinates are stored in canvas
   pixels, so a size change would misplace every replayed op. Unlocking rotation
   means normalising those coordinates first.
-- `restorePicture()` installs a `basePicture` that replays *underneath* the op
-  list. Undo walks back to that picture, not to a blank page — that is intended.
+- `restoreSession()` puts back the saved op list (`canvas-ops.json`) over its
+  photo (`paper-<id>.png`), and falls back to the flat `canvas.png` as a
+  `basePicture` when the ops cannot be used. Ops are canvas pixels, so they are
+  only installed once the paper is laid out at the size they were saved at; until
+  then (and for good after the first touch) the flat picture stands in, and
+  `saveSession()` returns null so the stand-in never overwrites the saved ops.
+  Undo walks back to `basePicture`, not to a blank page — that is intended.
   `setPaperPicture()` (the photo extra) does the same but clears the op list
   first: a new page is a new picture, and replaying the old ops would stamp a
   child's drawing onto a photo they have never seen.
@@ -88,11 +98,11 @@ one toolbar. Do not reintroduce emoji here.
   `PaintCanvasView.Live` and stays adjustable until the child touches somewhere
   else, changes tool, or undoes. Anything that reads or rewrites history has to
   settle it first — `commitLive()` is called from `undo`, `redo`, `clearPaper`,
-  `onSizeChanged` and the `tool` setter. `Live` has two subclasses, `LiveShape`
-  and `LiveSelection`, sharing one drag box so one finger drags and two pinch
-  and twist either of them.
-- The selection tool (`Tool.SELECT`) lifts a rectangle of pixels but **cuts
-  nothing** until the selection settles: the pixels stay in the bitmap and the
+  `onSizeChanged` and the `tool` setter. `Live` has four subclasses —
+  `LiveShape`, `LiveSelection`, `LiveText`, `LiveGroup` — sharing one drag box
+  so one finger drags and two pinch and twist any of them.
+- The hand's rectangle (`Tool.SELECT` dragged on empty paper) lifts pixels but
+  **cuts nothing** until the selection settles: the pixels stay in the bitmap and the
   floating copy is painted over a paper-coloured hole at draw time. That is why
   undoing a selection is free — `discardLive()` drops it and the picture is
   already correct — and why `drawLive()` has to paint the hole in the export
@@ -136,14 +146,51 @@ one toolbar. Do not reintroduce emoji here.
   picture someone is most likely to be moving something around on.
 - Text is a box, not a point. `TextOp` carries a `RectF` whose **width is the
   wrap width**; the bottom is an output, recomputed by `LiveText.reflow()` from
-  the laid-out `StaticLayout` height. So the corner handle rewraps the text
-  rather than stretching it, the size slider changes the font (and rewraps), and
-  a pinch scales box and font together — deliberately, or the text would rewrap
-  mid-pinch. Only `LiveText` gets a handle; shapes and selections are pinched,
-  and a handle on them would be a second way to do a thing that already works.
+  the laid-out `StaticLayout` height. So the size knob rewraps the text rather
+  than stretching it, the size slider changes the font (and rewraps), and a
+  pinch scales box and font together — deliberately, or the text would rewrap
+  mid-pinch.
+- Every live thing has **four knobs on strings** — move (hangs below), size
+  (off the corner), turn (above), and a red bin (off the opposite corner) —
+  whatever its size. The bin acts on lift, and only if the finger is still on it.
+  Binning a thing that was just made first records it and then relocates it to
+  nowhere (`RelocateOp(…, null)`), so one undo brings it back; a selection is
+  binned as an `EraseOp` of the pixels it lifted. They exist because a
+  four-year-old's fingertip covers a small shape completely: the finger holds the
+  knob, and the thing stays visible. They duplicate body-drag and pinch on
+  purpose; do not remove them as redundant. Knobs work off finger *deltas*, so a
+  knob pulled back onto the paper at an edge, or swung round to clear another
+  knob (`knobPlaces`), still moves the thing exactly as far as the finger moved.
+- Dragging out a shape, text box or selection hangs the pulled corner a
+  string's length **above** the finger (`dragCorner`), easing in over the first
+  few millimetres so it does not jump on touch-down. A plain tap with a shape
+  tool stamps a 3 cm shape.
+- The hand (`Tool.SELECT`) picks up what is already placed. `ObjectPicker`
+  finds the topmost op under the finger and carries every later op mostly inside
+  it; a later bucket fill is carried only if, re-run on the transparent carry
+  layer, it stays off the layer's edge — one that escapes was a background fill.
+  Several things travel as one `GroupOp` (a rendered layer, so a carried fill
+  cannot flood into what it lands on); one brush line goes back as a remapped
+  `StrokeOp`, one shape or text as itself. A later `MoveOp` over it, or a
+  `ClearOp`, makes it unpickable — the hand then falls back to the rectangle.
+  A tap on empty paper that puts a held thing down does only that.
+- A pick-up does not delete anything. The originals stay in `ops`; the held
+  `Live` lists them in `hidden`, and settling records a `RelocateOp(hidden,
+  content)` that replay honours by skipping them. Undo pops the relocation and
+  the originals reappear. This is why checkpoints go through
+  `checkpointUsable()` before replay: a snapshot that already has a now-hidden op
+  painted in is the wrong starting point. A pick-up nobody moved records nothing.
 - Tapping a live text without moving reopens the dialog on it. There is nowhere
   else a child would find "edit this", and `addText("")` on an existing box
-  deletes it, which is the only way to remove text that has not settled yet.
+  deletes it — the same as its bin knob.
+- The save button opens **My pictures**: "Save this picture" (gallery PNG *and*
+  an editable copy) plus a tile per kept picture. Opening one first puts the
+  current paper away — under its own picture, or as a new one — unless it is
+  blank, so opening never costs a drawing. `currentPictureId` (persisted) makes a
+  re-save update the picture it came from; clear, plain paper and a new photo
+  drop it, so a new page never overwrites the one it replaced. A store save with
+  no session (ops still waiting for their paper size) leaves the stored ops alone.
+  Hidden in kid mode along with the save button.
 - `Live.toOp()` may return null — a selection that was made and never moved. It
   has to leave no op behind, or every stray marquee becomes an undo step that
   changes nothing visible.
@@ -167,8 +214,8 @@ one toolbar. Do not reintroduce emoji here.
   up; without *persisting* it, a relaunch after time is up sets it off again.
   The ringtone is held so unlock can silence it, and it stops itself after
   `ALARM_MS` regardless.
-- Autosave writes `filesDir/canvas.png` ~1.2 s after each finished op **and** on
-  `onStop`. The debounced write is not belt-and-braces: kid mode blocks Home and
+- Autosave writes `filesDir/canvas.png` (plus `canvas-ops.json`, and the photo
+  once as `paper-<id>.png`) ~1.2 s after each finished op **and** on `onStop`. The debounced write is not belt-and-braces: kid mode blocks Home and
   Back, so killing the app is the only exit a child can reach, and a kill never
   runs `onStop`. It is separate from the 💾 button, which exports to the gallery.
 - Kid mode lives on disk, deliberately. The activity re-applies it from
