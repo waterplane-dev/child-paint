@@ -69,6 +69,14 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+
+    // AGP otherwise writes a Google-encrypted dependency list into the APK
+    // signing block. F-Droid's scanner rejects that blob, and nobody but Google
+    // can read it. The bundle keeps it: Play is the one reader it is meant for.
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = true
+    }
 }
 
 // Pinned to the newest versions that build against AGP 8.13.2 / compileSdk 36.

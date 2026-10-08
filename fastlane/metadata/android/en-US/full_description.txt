@@ -1,0 +1,24 @@
+<p>Little Painter is a drawing app for small children on a phone. Every colour, tool and button is on screen at once — no menus, no scrolling — because a child should never have to discover a hidden control.</p>
+
+<p><b>What it does</b></p>
+<ul>
+<li>Draw: a freehand brush with a size slider, and an eraser.</li>
+<li>Shapes: line, rectangle, oval, triangle, star, heart and more. Drag to size them. A shape stays adjustable after the finger lifts, with big knobs to move, resize, turn or bin it, so a small fingertip never hides the thing it is holding.</li>
+<li>Fill: a paint bucket that floods any enclosed area, including one enclosed by a wobbly freehand line.</li>
+<li>Text: drag a box and type into it.</li>
+<li>The hand picks up anything already drawn and moves it again.</li>
+<li>16 colours, unlimited undo and redo, and "My pictures" to keep drawings and open them again.</li>
+</ul>
+
+<p><b>Grown-up extras (off by default)</b></p>
+<ul>
+<li>Paint on a photo, chosen with the system photo picker (no gallery permission).</li>
+<li>Dress-up shapes: glasses, moustache, umbrella and crown, for drawing on a photo of a face.</li>
+<li>Hide the tools, so the paper fills the screen.</li>
+</ul>
+
+<p><b>Kid mode</b></p>
+<p>For leaving a child alone with the phone: one canvas, no saving, a usage timer shown as a bar, and a guarded way back (a simple sum and an optional PIN). It uses Android's screen pinning. The app is not a device owner, so a child who knows the unpin gesture can still leave — but reopening the app lands back in kid mode with the timer still running.</p>
+
+<p><b>Privacy</b></p>
+<p>No internet permission, no ads, no analytics, no accounts. Nothing leaves the phone.</p>

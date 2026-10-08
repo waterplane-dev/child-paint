@@ -1,0 +1,6 @@
+First public release.
+- Brush, eraser, shapes, paint bucket and text.
+- Knobs to move, size, turn and bin any shape; the hand picks placed things up again.
+- My pictures: keep drawings and open them again.
+- Grown-up extras: paint on a photo, dress-up shapes, hide the tools.
+- Kid mode with a usage timer and a guarded unlock.

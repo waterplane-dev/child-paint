@@ -1,18 +1,53 @@
 # Little Painter
 
-A shape painter for children, built for a phone.
+A drawing app for small children (about 3–6) on an Android phone: big buttons,
+no menus, no ads, no internet.
 
-<p align="center"><img src="docs/screenshot.png" width="320" alt="The app with a filled triangle on an orange background"></p>
+<p align="center"><img src="docs/demo.gif" width="320" alt="A child-style drawing session: a wobbly blue circle filled yellow with the paint bucket, a smiley face, green grass, a sun dragged out with its move, size, turn and bin knobs showing, and a pink heart"></p>
+
+- **Everything on one screen.** Colours, tools, undo and save are all visible at
+  once, the extra shapes one tap away behind "...". Nothing to scroll, no menus
+  a child would have to discover.
+- **Shapes a small finger can place.** A shape stays movable after it is drawn,
+  with big knobs to move, size, turn or bin it, so the fingertip never covers the
+  thing it is holding.
+- **A kid mode for handing the phone over.** Screen pinning, a usage timer shown
+  as a bar, and a sum-and-PIN unlock. Not escape-proof — [what it can and cannot
+  do](#what-screen-pinning-can-and-cannot-do).
+
+[Install](#install) · [Build from source](#building) ·
+[How it compares](#how-it-compares) · [Privacy](#privacy) ·
+[Security](SECURITY.md) · [Licence](#licence) · Android 7.0+ phones only;
+no iOS, no tablet layout.
+
+**Why not Tux Paint?** Tux Paint is the mature, far bigger open-source painting
+program for children and runs everywhere; Little Painter is smaller and made
+only for a phone held in one hand, with a parent's kid mode built in. More in
+[How it compares](#how-it-compares).
+
+## Install
+
+**APK:** download `little-painter-<version>.apk` from the
+[latest GitHub release](https://github.com/JohannesHoh/child-paint/releases/latest)
+and open it on the phone. Android asks once to allow installs from your browser
+or file manager. Updates are the same: install the newer APK over the old one;
+the drawing and settings stay.
+
+Not on Google Play or F-Droid yet. To build it yourself, see
+[Building](#building).
 
 ## What it does
 
 - **Draw** — freehand brush with a size slider, and an eraser.
-- **Shapes** — line, rectangle, oval, triangle, star, heart. Drag to size them.
+- **Shapes** — line, rectangle, oval and triangle on the toolbar; star, heart,
+  diamond, pentagon, hexagon, arrow, cloud, moon, sun, lightning, flower and
+  speech bubble behind the "..." button. Drag to size them, or tap to stamp one
+  3 cm across.
   A shape stays adjustable after the finger lifts: a dashed box marks it, one
   finger drags it somewhere else, two fingers pinch to resize and twist to turn
-  it. Touching anywhere else settles it. Nothing else in the app works this way,
-  and it does not need to — a brush stroke lands where you dragged, but a
-  moustache lands in the right place only by luck.
+  it, and four knobs on strings do the same for a finger too big to aim with.
+  Touching anywhere else settles it. A brush stroke lands where you dragged, but
+  a moustache lands in the right place only by luck.
   The style button cycles **filled → filled with a rim → outline**; filled is the
   default, because an outline a child then has to aim the paint bucket into is a
   second step they did not ask for. The rim colour is derived from the fill (45%
@@ -20,12 +55,14 @@ A shape painter for children, built for a phone.
   visible edge without a second colour to choose.
 - **Fill** — a paint bucket that floods any enclosed area, including areas
   enclosed by a wobbly freehand line.
-- **Text** — tap the paper, type a word, and it lands where you tapped in the
-  current colour and size.
-- 16 colours, unlimited undo/redo, and a save button that puts a PNG in
-  `Pictures/Little Painter` in the phone's gallery.
+- **Text** — drag a box and type into it.
+- **The hand** — picks up anything already on the paper and moves it again, or
+  lifts a rectangle of pixels when dragged on empty paper.
+- 16 colours, unlimited undo/redo, and **My pictures**: the save button keeps
+  the drawing as an editable picture and puts a PNG in `Pictures/Little Painter`
+  in the phone's gallery.
 
-Two more things are off until a grown-up switches them on — see
+Three more things are off until a grown-up switches them on — see
 [Grown-up extras](#grown-up-extras).
 
 The picture is kept between sessions automatically, so closing the app does not
@@ -33,7 +70,7 @@ lose the drawing.
 
 ## Grown-up extras
 
-Both are off by default. Press and hold the padlock **in parent mode** to reach
+All three are off by default. Press and hold the padlock **in parent mode** to reach
 the panel that turns them on; in kid mode the same hold is the unlock, so a child
 cannot get at either of them.
 
@@ -46,8 +83,8 @@ cannot get at either of them.
   it offers **Pick a photo** and **Plain paper**, and plain paper throws the photo
   away for good. Holding the clear button only paints over a photo — it stays
   underneath, and undo walks back onto it.
-- **Dress-up shapes.** Seven more shapes in the tool grid — glasses, moustache,
-  hair, hat, umbrella, bow tie, crown — dragged to size like every other shape,
+- **Dress-up shapes.** Four more shapes in the "..." drawer — glasses,
+  moustache, umbrella, crown — dragged to size like every other shape,
   and outline or filled like every other shape (filled glasses are sunglasses).
   They exist for drawing on a photo of a face; on a blank page they are clutter,
   which is why they are opt-in.
@@ -131,18 +168,45 @@ publishing sequence is in [docs/release-checklist.md](docs/release-checklist.md)
 
 Unit tests: `./gradlew testDebugUnitTest`.
 
+## How it compares
+
+Little Painter is one small app among several; pick by what you need. "Not
+listed" means the app's F-Droid page does not mention it, not that it is
+missing. Checked October 2026.
+
+| | Little Painter | [Tux Paint](https://f-droid.org/en/packages/org.tuxpaint/) | [BabbyPaint](https://f-droid.org/en/packages/dev.alexjyong.babbypaint/) | [Little Painter (marietetbc)](https://f-droid.org/en/packages/io.github.marietetbc.littlepainter/) |
+|---|---|---|---|---|
+| Made for | a phone, one hand | desktop first; Android, Windows, macOS, Linux | a phone | a phone |
+| Tools | brush, 16 shapes, bucket, text, move | far more: stamps, magic effects, sounds, starters | brush, eraser, undo/redo | brush, eraser, 4 stamps |
+| Adjust a shape after drawing | yes, knobs and pinch | not listed | not listed | not listed |
+| Parent lock | screen pinning + sum and PIN | config options (e.g. hide quit) | lock button | screen pinning + PIN |
+| Timer | yes, blocks the paper at the end | not listed | not listed | gentle hourglass reminder |
+| On F-Droid | not yet | yes | yes | yes |
+| Licence | Apache-2.0 | GPL-2.0+ | GPL-3.0 | GPL-3.0 |
+
+Where the others win: **Tux Paint** is mature, far richer and runs on every
+platform; **BabbyPaint** is simpler; the **other Little Painter** (an unrelated
+app that happens to share the name) is on F-Droid today and needs nothing but
+a finger. If all you want is a time limit and a lock around *any* app,
+Android's own **Digital Wellbeing** app timers or **Family Link** do that
+without installing anything.
+
 ## Contributing
 
-Read [CLAUDE.md](CLAUDE.md) first — its "Things that will bite you" section is
-the short list of decisions that look wrong until you know why they are there.
-Two in particular: the activity is locked to portrait because op coordinates are
-stored in canvas pixels, and the paint bucket matches within a colour tolerance
-rather than exactly.
+Bug reports, translations and small fixes are welcome; new tools start as an
+issue. See [CONTRIBUTING.md](CONTRIBUTING.md), and read [CLAUDE.md](CLAUDE.md)
+before changing code — its "Things that will bite you" section is the short
+list of decisions that look wrong until you know why they are there.
 
 ## Privacy
 
 The app requests no internet permission. Nothing is collected and nothing leaves
 the phone. See [docs/privacy-policy.md](docs/privacy-policy.md).
+
+## How it was made
+
+Written with Claude Code by one person, mostly from a phone. The gif at the top
+is redrawn by `scripts/demo/record-gif.sh` on an emulator.
 
 ## Licence
 
