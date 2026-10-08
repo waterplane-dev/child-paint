@@ -93,4 +93,9 @@ dependencies {
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
 
     testImplementation("junit:junit:4.13.2")
+    // Rect, RectF, org.json and SharedPreferences are throwing stubs in a plain JVM
+    // test. Robolectric supplies real ones, so the saved-picture format and the
+    // kid-mode clock can be tested without a device.
+    testImplementation("org.robolectric:robolectric:4.14.1")
+    testImplementation("androidx.test:core:1.6.1")
 }

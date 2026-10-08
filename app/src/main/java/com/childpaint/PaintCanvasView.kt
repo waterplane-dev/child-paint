@@ -103,8 +103,8 @@ class PaintCanvasView @JvmOverloads constructor(
     /** The live text the keyboard is typing into, if it is up. */
     private var editingText: LiveText? = null
 
-    private val ops = mutableListOf<DrawOp>()
-    private val redoStack = mutableListOf<DrawOp>()
+    private val history = History()
+    private val ops: List<DrawOp> get() = history.ops
 
     private var bitmap: Bitmap? = null
     private var bitmapCanvas: Canvas? = null
@@ -124,9 +124,9 @@ class PaintCanvasView @JvmOverloads constructor(
     private var basePictureId: String? = null
 
     /**
-     * A saved session waiting for the paper to be laid out at the size it was drawn
+     * A saved session waiting for the paper to be laid out at the width it was drawn
      * at. Op coordinates are canvas pixels, so ops restored onto a paper of another
-     * size would land in the wrong places; until the sizes agree the flat picture
+     * width would land in the wrong places; until the widths agree the flat picture
      * stands in, and the first touch gives up on the session for good.
      */
     private var pendingSession: OpCodec.Session? = null
@@ -425,8 +425,8 @@ class PaintCanvasView @JvmOverloads constructor(
     private var dragging = false
     private var activePointerId = MotionEvent.INVALID_POINTER_ID
 
-    val canUndo: Boolean get() = ops.isNotEmpty() || live != null
-    val canRedo: Boolean get() = redoStack.isNotEmpty()
+    val canUndo: Boolean get() = history.canUndo || live != null
+    val canRedo: Boolean get() = history.canRedo
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
@@ -439,10 +439,8 @@ class PaintCanvasView @JvmOverloads constructor(
         bitmapCanvas = Canvas(bmp)
         dropCheckpointsAfter(0)
         pendingSession?.let { session ->
-            if (session.width == w && session.height == h) {
-                ops.clear()
-                ops.addAll(session.ops)
-                redoStack.clear()
+            if (fitsPaper(session, w)) {
+                history.reset(session.ops)
                 basePicture = pendingPaper
                 basePictureId = session.paperId
                 pendingSession = null
@@ -453,28 +451,15 @@ class PaintCanvasView @JvmOverloads constructor(
         onHistoryChanged?.invoke()
     }
 
-    /** Every op index that is off the paper right now: relocated, or held in the hand. */
-    private fun hiddenIndices(): Set<Int> =
-        ObjectPicker.hiddenIn(ops).apply { live?.hidden?.forEach { add(it) } }
+    /** The op indices held in the hand right now, off the paper until put down. */
+    private fun held(): IntArray = live?.hidden ?: IntArray(0)
 
-    /**
-     * Whether a snapshot of the first [count] ops is still the right starting point.
-     * It is not once something later — a relocation, or the thing in the hand —
-     * takes back an op the snapshot already has painted in.
-     */
-    private fun checkpointUsable(count: Int): Boolean {
-        if (live?.hidden?.any { it < count } == true) return false
-        for (k in count until ops.size) {
-            val op = ops[k]
-            if (op is RelocateOp && op.hidden.any { it < count }) return false
-        }
-        return true
-    }
+    private fun checkpointUsable(count: Int): Boolean = history.snapshotUsable(count, held())
 
     private fun replayAll() {
         val bmp = bitmap ?: return
         val canvas = bitmapCanvas ?: return
-        val hidden = hiddenIndices()
+        val hidden = history.hidden(held())
         val from = checkpoints.lastOrNull { checkpointUsable(it.opCount) }
         if (from != null) {
             canvas.drawBitmap(from.bitmap, 0f, 0f, null)
@@ -509,6 +494,10 @@ class PaintCanvasView @JvmOverloads constructor(
     }
 
     private fun fitRect(picture: Bitmap): RectF {
+        // Same width: the paper only got taller or shorter (the hide-the-tools extra),
+        // and ops are pinned to its top-left. Leave the picture where they expect it
+        // rather than shrinking it out from under them.
+        if (picture.width == width) return RectF(0f, 0f, width.toFloat(), picture.height.toFloat())
         val scale = minOf(width / picture.width.toFloat(), height / picture.height.toFloat())
         val w = picture.width * scale
         val h = picture.height * scale
@@ -545,8 +534,7 @@ class PaintCanvasView @JvmOverloads constructor(
      */
     fun setPaperPicture(picture: Bitmap) {
         live = null
-        ops.clear()
-        redoStack.clear()
+        history.reset()
         dropCheckpointsAfter(0)
         basePicture = picture
         basePictureId = UUID.randomUUID().toString()
@@ -564,8 +552,7 @@ class PaintCanvasView @JvmOverloads constructor(
      */
     fun useBlankPaper() {
         live = null
-        ops.clear()
-        redoStack.clear()
+        history.reset()
         dropCheckpointsAfter(0)
         basePicture = null
         basePictureId = null
@@ -579,20 +566,19 @@ class PaintCanvasView @JvmOverloads constructor(
      *
      * [session] is the op list with [paper] (the photo, if any) under it; [flat]
      * is the whole picture as one image, which stands in whenever the ops cannot
-     * be used — unreadable, from an older version, or drawn at another paper size.
+     * be used — unreadable, from an older version, or drawn on paper of another width.
      */
     fun restoreSession(session: OpCodec.Session?, paper: Bitmap?, flat: Bitmap?) {
         live = null
-        ops.clear()
-        redoStack.clear()
+        history.reset()
         dropCheckpointsAfter(0)
         basePicture = flat
         basePictureId = flat?.let { UUID.randomUUID().toString() }
         val usable = session != null && (session.paperId == null || paper != null)
         pendingSession = if (usable) session else null
         pendingPaper = if (usable) paper else null
-        if (usable && width == session!!.width && height == session.height) {
-            ops.addAll(session.ops)
+        if (usable && fitsPaper(session!!, width)) {
+            history.reset(session.ops)
             basePicture = paper
             basePictureId = session.paperId
             pendingSession = null
@@ -602,8 +588,24 @@ class PaintCanvasView @JvmOverloads constructor(
         onHistoryChanged?.invoke()
     }
 
-    /** What autosave writes: the op list as JSON, plus the photo it sits on. */
-    class SavedSession(val json: String, val paperId: String?, val paper: Bitmap?)
+    /**
+     * Whether [session] can be replayed on paper [width] pixels wide. Only the
+     * width has to agree: ops are pinned to the top-left, and a height change is exactly what the hide-the-tools extra does to the paper
+     * live, where replay already copes (what falls off the bottom is clipped, and
+     * [MoveOp] guards its cut). Requiring both had a picture saved with the tools
+     * out come back flat with the tools hidden — and the next save made that
+     * permanent, since the ops file then holds only what was drawn after.
+     */
+    private fun fitsPaper(session: OpCodec.Session, width: Int): Boolean = session.width == width
+
+    /**
+     * What autosave writes: the op list, plus the photo it sits on. Handed over
+     * unencoded — the ops are immutable, so the IO thread can turn them into JSON
+     * while the child keeps drawing, instead of the UI thread doing it every save.
+     */
+    class SavedSession(val session: OpCodec.Session, val paper: Bitmap?) {
+        val paperId: String? get() = session.paperId
+    }
 
     /**
      * The session as it stands, with the thing in the hand counted as put down, or
@@ -614,8 +616,7 @@ class PaintCanvasView @JvmOverloads constructor(
         if (width <= 0 || height <= 0 || pendingSession != null) return null
         val all = ops.toMutableList()
         live?.toOp()?.let { all += it }
-        val json = OpCodec.encode(OpCodec.Session(width, height, basePictureId, all))
-        return SavedSession(json, basePictureId, basePicture)
+        return SavedSession(OpCodec.Session(width, height, basePictureId, all), basePicture)
     }
 
     /**
@@ -651,8 +652,7 @@ class PaintCanvasView @JvmOverloads constructor(
     private fun commit(op: DrawOp) {
         val bmp = bitmap ?: return
         val canvas = bitmapCanvas ?: return
-        ops.add(op)
-        redoStack.clear()
+        history.record(op)
         op.apply(canvas, bmp)
         maybeCheckpoint()
         invalidate()
@@ -1221,8 +1221,8 @@ class PaintCanvasView @JvmOverloads constructor(
                     return
                 }
                 // Recorded without being painted: the bitmap never had it.
-                ops.add(op)
-                commit(RelocateOp(intArrayOf(ops.lastIndex), null))
+                history.record(op)
+                commit(RelocateOp(intArrayOf(history.size - 1), null))
             }
         }
     }
@@ -1535,14 +1535,13 @@ class PaintCanvasView @JvmOverloads constructor(
             // on screen. Undo restores one of those after a move; stopping here would
             // spend the press without the picture moving, so walk history instead.
         }
-        if (ops.isEmpty()) {
+        val undone = history.undo()
+        if (undone == null) {
             invalidate()
             onHistoryChanged?.invoke()
             return
         }
-        val undone = ops.removeAt(ops.lastIndex)
-        redoStack.add(undone)
-        dropCheckpointsAfter(ops.size)
+        dropCheckpointsAfter(history.size)
         replayAll()
         // Undoing a move or a caption hands the object back rather than throwing it
         // away: both are placed by eye, and "not quite there" is the usual reason
@@ -1563,9 +1562,7 @@ class PaintCanvasView @JvmOverloads constructor(
         // Settling a shape is new work, and new work clears the redo stack — the
         // same rule every other committed op follows.
         commitLive()
-        if (redoStack.isEmpty()) return
-        val op = redoStack.removeAt(redoStack.lastIndex)
-        ops.add(op)
+        val op = history.redo() ?: return
         // A relocation takes things out from under later ops, so painting it on top
         // is not enough: the whole picture has to be replayed without them.
         if (op is RelocateOp) {

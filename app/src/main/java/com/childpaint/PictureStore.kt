@@ -4,7 +4,6 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import java.io.File
-import java.io.FileOutputStream
 
 /**
  * Pictures kept inside the app so they can be opened again and worked on — every
@@ -37,21 +36,22 @@ class PictureStore(context: Context) {
      */
     fun save(id: String, session: PaintCanvasView.SavedSession?, flat: Bitmap) {
         val dir = File(root, id).apply { mkdirs() }
-        writePng(File(dir, FLAT), flat)
+        File(dir, FLAT).writePngAtomically(flat)
         val thumb = Bitmap.createScaledBitmap(
             flat, (flat.width / THUMB_SCALE).coerceAtLeast(1), (flat.height / THUMB_SCALE).coerceAtLeast(1), true
         )
-        writePng(File(dir, THUMB), thumb)
-        thumb.recycle()
+        try {
+            File(dir, THUMB).writePngAtomically(thumb)
+        } finally {
+            thumb.recycle()
+        }
         // No session means the paper is still showing the flat stand-in for ops it
         // has not placed yet (see PaintCanvasView.saveSession). Nothing was drawn,
         // so the ops already stored here are still the truth: leave them.
         if (session == null) return
         val paperFile = File(dir, PAPER)
-        if (session.paper != null) writePng(paperFile, session.paper) else paperFile.delete()
-        val temp = File(dir, "$OPS.tmp")
-        temp.writeText(session.json)
-        temp.renameTo(File(dir, OPS))
+        if (session.paper != null) paperFile.writePngAtomically(session.paper) else paperFile.delete()
+        File(dir, OPS).writeTextAtomically(OpCodec.encode(session.session))
     }
 
     fun load(id: String): Loaded? {
@@ -68,12 +68,6 @@ class PictureStore(context: Context) {
 
     fun delete(id: String) {
         File(root, id).deleteRecursively()
-    }
-
-    private fun writePng(target: File, bitmap: Bitmap) {
-        val temp = File(target.parentFile, "${target.name}.tmp")
-        FileOutputStream(temp).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
-        temp.renameTo(target)
     }
 
     private companion object {

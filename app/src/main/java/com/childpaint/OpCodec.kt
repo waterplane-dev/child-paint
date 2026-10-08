@@ -1,5 +1,7 @@
 package com.childpaint
 
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Rect
 import android.graphics.RectF
 import org.json.JSONArray
@@ -13,6 +15,16 @@ import java.util.Locale
  * Flat was fine while nothing could be picked up after it settled. Once the hand
  * can lift a heart drawn yesterday, a kill — the one exit kid mode leaves open —
  * must not quietly turn every heart into pixels.
+ *
+ * Compatibility rules, because once this ships the files outlive the code that
+ * wrote them:
+ * - A new kind of op gets a new `t`; an existing op is never reshaped. Older
+ *   versions read an op they do not know as an [UnknownOp] and keep the rest.
+ * - A new field on an existing op is optional, read with a default (`opt*`), so
+ *   files written before it existed still load.
+ * - [VERSION] goes up only for a change old readers would get *wrong*, not merely
+ *   not understand. A file from a newer version is refused (the flat picture stands
+ *   in); one from an older version is read, migrating in [decode] if ever needed.
  */
 object OpCodec {
 
@@ -32,7 +44,7 @@ object OpCodec {
     /** Null for anything unreadable; the caller falls back to the flat picture. */
     fun decode(json: String): Session? = try {
         val o = JSONObject(json)
-        if (o.getInt("v") != VERSION) null
+        if (o.getInt("v") > VERSION) null
         else {
             val array = o.getJSONArray("ops")
             Session(
@@ -45,8 +57,9 @@ object OpCodec {
         null
     }
 
-    private fun encodeOp(op: DrawOp): JSONObject = JSONObject().apply {
+    private fun encodeOp(op: DrawOp): JSONObject = if (op is UnknownOp) JSONObject(op.json) else JSONObject().apply {
         when (op) {
+            is UnknownOp -> Unit
             is StrokeOp -> {
                 put("t", "stroke")
                 put("pts", points(op.points))
@@ -108,7 +121,18 @@ object OpCodec {
         }
     }
 
-    private fun decodeOp(o: JSONObject): DrawOp = when (o.getString("t")) {
+    /**
+     * One op, or an [UnknownOp] holding its JSON when it cannot be read — a kind or
+     * shape this version does not know. One unreadable op must not cost the whole
+     * picture, and it must keep its place in the list: see [UnknownOp].
+     */
+    private fun decodeOp(o: JSONObject): DrawOp = try {
+        decodeKnownOp(o)
+    } catch (e: Exception) {
+        UnknownOp(o.toString())
+    }
+
+    private fun decodeKnownOp(o: JSONObject): DrawOp = when (o.getString("t")) {
         "stroke" -> StrokeOp(
             parsePoints(o.getString("pts")), o.getInt("c"), o.getDouble("w").toFloat(), o.optBoolean("e")
         )
@@ -174,4 +198,15 @@ object OpCodec {
     private fun rectF(a: JSONArray) = RectF(a.f(0), a.f(1), a.f(2), a.f(3))
 
     private fun JSONArray.f(i: Int) = getDouble(i).toFloat()
+}
+
+/**
+ * An op this version cannot read, most likely written by a newer one. It paints
+ * nothing and cannot be picked up, but it keeps its slot: [RelocateOp.hidden]
+ * refers to ops by position, so dropping it would shift every later index onto the
+ * wrong thing. Its JSON is written back exactly as it came, so a round trip through
+ * an older version loses nothing.
+ */
+class UnknownOp(val json: String) : DrawOp() {
+    override fun apply(canvas: Canvas, bitmap: Bitmap) = Unit
 }

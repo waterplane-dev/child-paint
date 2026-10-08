@@ -381,15 +381,14 @@ class MainActivity : AppCompatActivity() {
      * and put back on launch, independently of the explicit save-to-gallery button.
      */
     private fun persistPicture() {
-        // Copy on the UI thread (cheap), encode off it (not cheap).
+        // Copy on the UI thread (cheap); encode both the PNG and the op list off it
+        // (not cheap — the JSON grows with every point of every stroke).
         val bitmap = binding.paintView.exportBitmap() ?: return
         val session = binding.paintView.saveSession()
         if (ioExecutor.isShutdown) return
         ioExecutor.execute {
             try {
-                FileOutputStream(File(filesDir, AUTOSAVE_NAME)).use { out ->
-                    bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
-                }
+                File(filesDir, AUTOSAVE_NAME).writePngAtomically(bitmap)
                 if (session != null) persistSession(session)
             } catch (e: Exception) {
                 // A failed autosave must never take the app down mid-drawing.
@@ -407,15 +406,9 @@ class MainActivity : AppCompatActivity() {
         val paperName = session.paperId?.let { "$PAPER_PREFIX$it.png" }
         if (paperName != null && session.paper != null) {
             val paperFile = File(filesDir, paperName)
-            if (!paperFile.exists()) {
-                val temp = File(filesDir, "$paperName.tmp")
-                FileOutputStream(temp).use { session.paper.compress(Bitmap.CompressFormat.PNG, 100, it) }
-                temp.renameTo(paperFile)
-            }
+            if (!paperFile.exists()) paperFile.writePngAtomically(session.paper)
         }
-        val temp = File(filesDir, "$SESSION_NAME.tmp")
-        temp.writeText(session.json)
-        temp.renameTo(File(filesDir, SESSION_NAME))
+        File(filesDir, SESSION_NAME).writeTextAtomically(OpCodec.encode(session.session))
         filesDir.listFiles()?.forEach { file ->
             if (file.name.startsWith(PAPER_PREFIX) && file.name != paperName) file.delete()
         }

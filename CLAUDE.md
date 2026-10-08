@@ -21,7 +21,7 @@ control.
 
 ```
 ./gradlew assembleDebug          # debug APK -> app/build/outputs/apk/debug/
-./gradlew testDebugUnitTest      # JVM unit tests (FloodFill)
+./gradlew testDebugUnitTest      # JVM unit tests (Robolectric: OpCodec, History, KidModeState, FloodFill)
 ./gradlew installDebug           # build + install on the attached device
 ./gradlew bundleRelease          # AAB for Play -> app/build/outputs/bundle/release/
 ```
@@ -37,14 +37,22 @@ shippable and that Play rejects. See `docs/release-checklist.md`.
 
 ## Layout
 
-- `PaintCanvasView.kt` — the paper: bitmap, op list, touch handling, live preview
-  of the gesture in flight.
+- `PaintCanvasView.kt` — the paper: bitmap, checkpoints, touch handling, live
+  preview of the gesture in flight.
+- `History.kt` — the op list and redo stack, which ops are hidden (relocated or
+  held), and whether a snapshot is still a usable replay start. No View, no
+  bitmaps, so it is unit-tested; new history rules go here, not in the view.
 - `DrawOps.kt` — `Tool`/`ShapeKind`/`ShapeStyle` enums and the `DrawOp` types,
   plus the shape path maths (star, heart, triangle, and the opt-in dress-up
   shapes).
 - `ObjectPicker.kt` — the hand tool's brain: which op is under a finger, and
   what later ops sit on it and have to come along when it is picked up.
 - `OpCodec.kt` — the op list to JSON and back, so objects survive a restart.
+  The file outlives the code that wrote it: read its compatibility rules before
+  changing an op. An op it cannot read becomes an `UnknownOp` that keeps its
+  slot (`RelocateOp.hidden` is positional) and is written back verbatim.
+- `AtomicWrite.kt` — every file the app keeps goes through `writeAtomically`
+  (temp file, fsync, rename). A kill is the normal exit from kid mode.
 - `PictureStore.kt` — "My pictures": saved drawings kept in `filesDir/pictures/`
   as op lists, so an old picture opens with its things still pickable.
 - `FloodFill.kt` — scanline paint bucket. Matches within a colour tolerance on
@@ -120,7 +128,8 @@ palette and the knobs are drawing colours, not chrome).
 - `restoreSession()` puts back the saved op list (`canvas-ops.json`) over its
   photo (`paper-<id>.png`), and falls back to the flat `canvas.png` as a
   `basePicture` when the ops cannot be used. Ops are canvas pixels, so they are
-  only installed once the paper is laid out at the size they were saved at; until
+  only installed once the paper is laid out at the *width* they were saved at
+  (`fitsPaper`; height may differ — that is just the toolbar extra); until
   then (and for good after the first touch) the flat picture stands in, and
   `saveSession()` returns null so the stand-in never overwrites the saved ops.
   Undo walks back to `basePicture`, not to a blank page — that is intended.
@@ -263,9 +272,14 @@ palette and the knobs are drawing colours, not chrome).
   the paper. It cannot simply be hidden in the column — that resizes the canvas,
   and a size change recreates the bitmap while op coordinates are canvas pixels,
   so the picture would shift under the child every time the tools opened.
-- `replayAll()` scales `basePicture` to *fit*, not to fill. It is normally
-  canvas-sized already (identity), but the toolbar extra changes the canvas
-  height, and stretching would squash a face to the new shape.
+- `replayAll()` never stretches `basePicture`. At the paper's width (the normal
+  case, and the toolbar extra, which only changes height) it is drawn 1:1 from
+  the top-left, where the ops drawn over it expect it; shrinking it to fit the
+  new height slid the photo out from under them. Any other width is scaled to
+  *fit*, because stretching would squash a face.
+- Autosave hands the IO thread an unencoded `OpCodec.Session`; `OpCodec.encode`
+  must not run on the UI thread (the JSON grows with every stroke point). Ops are
+  immutable, which is what makes handing them across safe — keep them so.
 - The expiry alert is fired from the one-second tick and guarded by a persisted
   `KEY_ALERTED`. Without the flag it re-fires every second while the overlay is
   up; without *persisting* it, a relaunch after time is up sets it off again.
