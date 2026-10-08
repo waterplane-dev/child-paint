@@ -58,6 +58,15 @@ class History {
         return true
     }
 
+    /**
+     * Which of the snapshots taken after [counts] ops (oldest first) to let go of
+     * when there are too many: one that can no longer start a replay, or else the
+     * oldest. Keeping a dead one over a live one leaves every undo replaying from
+     * the first op.
+     */
+    fun snapshotToDrop(counts: List<Int>): Int =
+        counts.indexOfFirst { !snapshotUsable(it) }.takeIf { it >= 0 } ?: 0
+
     private companion object {
         val NONE = IntArray(0)
     }

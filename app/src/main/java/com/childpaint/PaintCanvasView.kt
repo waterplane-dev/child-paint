@@ -486,11 +486,21 @@ class PaintCanvasView @JvmOverloads constructor(
      */
     private fun checkpointDuringReplay(count: Int, bmp: Bitmap) {
         if (live?.lifted == true) return
-        val last = checkpoints.lastOrNull()?.opCount ?: 0
+        // Measured from the last snapshot that still works. A move of something old
+        // leaves the later snapshots dead; measured from those, a shrinking history
+        // never got far enough past them to take a new one, and every undo after
+        // the move replayed from the first op.
+        val last = checkpoints.lastOrNull { checkpointUsable(it.opCount) }?.opCount ?: 0
         if (count - last < CHECKPOINT_INTERVAL || !checkpointUsable(count)) return
         dropCheckpointsAfter(count - 1)
+        addCheckpoint(count, bmp)
+    }
+
+    private fun addCheckpoint(count: Int, bmp: Bitmap) {
         checkpoints += Checkpoint(count, bmp.copy(Bitmap.Config.ARGB_8888, false))
-        while (checkpoints.size > MAX_CHECKPOINTS) checkpoints.removeAt(0).bitmap.recycle()
+        while (checkpoints.size > MAX_CHECKPOINTS) {
+            checkpoints.removeAt(history.snapshotToDrop(checkpoints.map { it.opCount })).bitmap.recycle()
+        }
     }
 
     private fun fitRect(picture: Bitmap): RectF {
@@ -510,12 +520,9 @@ class PaintCanvasView @JvmOverloads constructor(
     private fun maybeCheckpoint() {
         val bmp = bitmap ?: return
         if (live?.lifted == true) return
-        val since = ops.size - (checkpoints.lastOrNull()?.opCount ?: 0)
+        val since = ops.size - (checkpoints.lastOrNull { checkpointUsable(it.opCount) }?.opCount ?: 0)
         if (since < CHECKPOINT_INTERVAL) return
-        checkpoints += Checkpoint(ops.size, bmp.copy(Bitmap.Config.ARGB_8888, false))
-        while (checkpoints.size > MAX_CHECKPOINTS) {
-            checkpoints.removeAt(0).bitmap.recycle()
-        }
+        addCheckpoint(ops.size, bmp)
     }
 
     /** Undo invalidates every snapshot taken past the new end of the op list. */

@@ -90,4 +90,18 @@ class HistoryTest {
         assertFalse(h.snapshotUsable(12, held = intArrayOf(4)))
         assertTrue(h.snapshotUsable(4, held = intArrayOf(4)))
     }
+
+    /** A move of something old kills the later snapshots; those go before a live one. */
+    @Test
+    fun theSnapshotToDropIsADeadOneBeforeTheOldest() {
+        val h = History()
+        repeat(30) { h.record(op()) }
+        assertEquals(0, h.snapshotToDrop(listOf(12, 24)))
+        h.record(RelocateOp(intArrayOf(3), null))
+        h.record(op())
+        // 12 and 24 both have op 3 painted in; 32 was taken after the move.
+        assertEquals(0, h.snapshotToDrop(listOf(12, 24, 32)))
+        assertEquals(1, h.snapshotToDrop(listOf(2, 24, 32)))
+        assertEquals(0, h.snapshotToDrop(listOf(2, 32)))
+    }
 }

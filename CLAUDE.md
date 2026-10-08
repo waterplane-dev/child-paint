@@ -289,6 +289,13 @@ palette and the knobs are drawing colours, not chrome).
   once as `paper-<id>.png`) ~1.2 s after each finished op **and** on `onStop`. The debounced write is not belt-and-braces: kid mode blocks Home and
   Back, so killing the app is the only exit a child can reach, and a kill never
   runs `onStop`. It is separate from the 💾 button, which exports to the gallery.
+  The debounce has a 10 s ceiling (`AUTOSAVE_MAX_WAIT_MS`): a child who never
+  pauses would otherwise never be saved.
+- Every file read and write goes through one **process-wide** executor
+  (`MainActivity.IO`), including the restore in `onCreate`. Per-activity, a
+  recreated activity read `canvas-ops.json` while its predecessor's last save
+  was still writing it, restored stale ops, and autosaved them over the fresh
+  ones. Autosave is held off (`restored`) until the restore has landed.
 - Kid mode lives on disk, deliberately. The activity re-applies it from
   `KidModeState` in `onStart`, so a force-stop re-enters kid mode instead of
   escaping it, and the timer is an absolute deadline rather than a countdown so

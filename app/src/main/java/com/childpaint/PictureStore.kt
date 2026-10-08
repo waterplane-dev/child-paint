@@ -30,9 +30,12 @@ class PictureStore(context: Context) {
             .sortedByDescending { it.modified }
 
     /**
-     * Writes a picture under [id], replacing what was there. Everything goes to
-     * temporary names first and is renamed into place, the op list last, so a
-     * kill halfway leaves the old picture whole rather than half of each.
+     * Writes a picture under [id], replacing what was there. Each file is written
+     * atomically, and the pair that has to agree — the op list and the photo under
+     * it — is never overwritten in place: the photo is stored under its own paper
+     * id, before the op list that names it, and old photos are swept only after.
+     * A kill anywhere leaves an op list with the photo it was drawn on. The flat
+     * picture and thumbnail may already be the new ones; they are stand-ins.
      */
     fun save(id: String, session: PaintCanvasView.SavedSession?, flat: Bitmap) {
         val dir = File(root, id).apply { mkdirs() }
@@ -49,9 +52,15 @@ class PictureStore(context: Context) {
         // has not placed yet (see PaintCanvasView.saveSession). Nothing was drawn,
         // so the ops already stored here are still the truth: leave them.
         if (session == null) return
-        val paperFile = File(dir, PAPER)
-        if (session.paper != null) paperFile.writePngAtomically(session.paper) else paperFile.delete()
+        val paperName = session.paperId?.let { paperName(it) }
+        if (paperName != null && session.paper != null) {
+            val paperFile = File(dir, paperName)
+            if (!paperFile.exists()) paperFile.writePngAtomically(session.paper)
+        }
         File(dir, OPS).writeTextAtomically(OpCodec.encode(session.session))
+        dir.listFiles()?.forEach { file ->
+            if (file.name != paperName && (file.name == LEGACY_PAPER || file.name.startsWith(PAPER_PREFIX))) file.delete()
+        }
     }
 
     fun load(id: String): Loaded? {
@@ -60,7 +69,11 @@ class PictureStore(context: Context) {
         val session = File(dir, OPS).takeIf { it.exists() }?.let {
             try { OpCodec.decode(it.readText()) } catch (e: Exception) { null }
         }
-        val paper = File(dir, PAPER).takeIf { it.exists() }?.let { BitmapFactory.decodeFile(it.absolutePath) }
+        // Only the photo the op list names. Pictures saved before photos were named
+        // kept theirs as paper.png, which was the right one whenever it was whole.
+        val paper = session?.paperId
+            ?.let { id -> File(dir, paperName(id)).takeIf { it.exists() } ?: File(dir, LEGACY_PAPER).takeIf { it.exists() } }
+            ?.let { BitmapFactory.decodeFile(it.absolutePath) }
         val flat = File(dir, FLAT).takeIf { it.exists() }?.let { BitmapFactory.decodeFile(it.absolutePath) }
         if (session == null && flat == null) return null
         return Loaded(session, paper, flat)
@@ -70,9 +83,13 @@ class PictureStore(context: Context) {
         File(root, id).deleteRecursively()
     }
 
+    private fun paperName(paperId: String) = "$PAPER_PREFIX$paperId.png"
+
     private companion object {
         const val OPS = "ops.json"
-        const val PAPER = "paper.png"
+        /** The photo under the ops, one file per photo: paper-<id>.png. */
+        const val PAPER_PREFIX = "paper-"
+        const val LEGACY_PAPER = "paper.png"
         const val FLAT = "flat.png"
         const val THUMB = "thumb.png"
         const val THUMB_SCALE = 4

@@ -17,10 +17,12 @@ import android.os.Bundle
 import android.os.Environment
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import android.provider.MediaStore
+import android.util.Log
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -47,6 +49,7 @@ import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import java.io.File
 import java.io.FileOutputStream
+import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 class MainActivity : AppCompatActivity() {
@@ -77,8 +80,15 @@ class MainActivity : AppCompatActivity() {
     private var currentPictureId: String?
         get() = picturePrefs.getString(KEY_CURRENT_PICTURE, null)
         set(value) { picturePrefs.edit().putString(KEY_CURRENT_PICTURE, value).apply() }
-    /** Autosave encoding and photo decoding both go here: off the UI thread, in order. */
-    private val ioExecutor = Executors.newSingleThreadExecutor()
+    /**
+     * False until the saved picture is back on the paper. Restoring reads on the
+     * worker now, and an autosave before it lands would write the blank paper over
+     * the files it is still reading from.
+     */
+    private var restored = false
+
+    /** When the oldest change not yet autosaved was made; 0 when everything is saved. */
+    private var unsavedSince = 0L
     private val autosave = Runnable { persistPicture() }
     private val ticker = Handler(Looper.getMainLooper())
     private val tick = object : Runnable {
@@ -161,20 +171,22 @@ class MainActivity : AppCompatActivity() {
         persistPicture()
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
-        ioExecutor.shutdown()
-    }
-
     /**
      * Autosaving on onStop alone is not enough: in kid mode Home and Back are
      * blocked, so killing the app is the one exit a child can actually reach — and
      * a kill never runs onStop. Saving shortly after each finished stroke means the
      * worst case loses a second of drawing instead of the whole picture.
+     *
+     * The debounce has a ceiling. Each stroke pushes the save back, so a child who
+     * never pauses for [AUTOSAVE_DELAY_MS] — the usual way a small child draws —
+     * would otherwise not be saved at all until they stopped.
      */
     private fun scheduleAutosave() {
+        val now = SystemClock.uptimeMillis()
+        if (unsavedSince == 0L) unsavedSince = now
+        val ceiling = unsavedSince + AUTOSAVE_MAX_WAIT_MS - now
         ticker.removeCallbacks(autosave)
-        ticker.postDelayed(autosave, AUTOSAVE_DELAY_MS)
+        ticker.postDelayed(autosave, AUTOSAVE_DELAY_MS.coerceAtMost(ceiling).coerceAtLeast(0L))
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -381,17 +393,19 @@ class MainActivity : AppCompatActivity() {
      * and put back on launch, independently of the explicit save-to-gallery button.
      */
     private fun persistPicture() {
+        if (!restored) return
         // Copy on the UI thread (cheap); encode both the PNG and the op list off it
         // (not cheap — the JSON grows with every point of every stroke).
         val bitmap = binding.paintView.exportBitmap() ?: return
         val session = binding.paintView.saveSession()
-        if (ioExecutor.isShutdown) return
-        ioExecutor.execute {
+        unsavedSince = 0L
+        IO.execute {
             try {
                 File(filesDir, AUTOSAVE_NAME).writePngAtomically(bitmap)
                 if (session != null) persistSession(session)
             } catch (e: Exception) {
                 // A failed autosave must never take the app down mid-drawing.
+                Log.w(TAG, "autosave failed", e)
             }
         }
     }
@@ -414,19 +428,31 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * Reads the autosave on the worker, not in onCreate's frame: decoding the op
+     * list costs as much as encoding it. Being on the same worker as the writes is
+     * the other half — a relaunch reads only after the last activity's final save
+     * has landed, never the file it was about to replace.
+     */
     private fun restoreLastPicture() {
-        val flatFile = File(filesDir, AUTOSAVE_NAME)
-        val flat = if (flatFile.exists()) BitmapFactory.decodeFile(flatFile.absolutePath) else null
-        val sessionFile = File(filesDir, SESSION_NAME)
-        val session = if (sessionFile.exists()) {
-            try { OpCodec.decode(sessionFile.readText()) } catch (e: Exception) { null }
-        } else null
-        val paper = session?.paperId?.let { id ->
-            val file = File(filesDir, "$PAPER_PREFIX$id.png")
-            if (file.exists()) BitmapFactory.decodeFile(file.absolutePath) else null
+        IO.execute {
+            val flatFile = File(filesDir, AUTOSAVE_NAME)
+            val flat = if (flatFile.exists()) BitmapFactory.decodeFile(flatFile.absolutePath) else null
+            val sessionFile = File(filesDir, SESSION_NAME)
+            val session = if (sessionFile.exists()) {
+                try { OpCodec.decode(sessionFile.readText()) } catch (e: Exception) { null }
+            } else null
+            val paper = session?.paperId?.let { id ->
+                val file = File(filesDir, "$PAPER_PREFIX$id.png")
+                if (file.exists()) BitmapFactory.decodeFile(file.absolutePath) else null
+            }
+            runOnUiThread {
+                if (isDestroyed) return@runOnUiThread
+                if (flat != null || session != null) binding.paintView.restoreSession(session, paper, flat)
+                restored = true
+                refreshHistoryButtons()
+            }
         }
-        if (flat == null && session == null) return
-        binding.paintView.restoreSession(session, paper, flat)
     }
 
     /**
@@ -552,7 +578,7 @@ class MainActivity : AppCompatActivity() {
         // Decoding a phone camera photo is tens of milliseconds at best and a
         // visible stutter at worst, so it happens on the same worker the autosave
         // uses and comes back to the canvas on the main thread.
-        ioExecutor.execute {
+        IO.execute {
             val paper = PhotoPaper.load(this, uri, width, height, paperColor)
             runOnUiThread {
                 if (paper == null) {
@@ -960,13 +986,17 @@ class MainActivity : AppCompatActivity() {
             return
         }
         val name = "paint-${System.currentTimeMillis()}.png"
-        val ok = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            saveViaMediaStore(bitmap, name)
-        } else {
-            saveToLegacyPictures(bitmap, name)
+        // A full-screen PNG takes hundreds of milliseconds to encode: on the worker,
+        // or the paper freezes under the child's finger.
+        IO.execute {
+            val ok = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                saveViaMediaStore(bitmap, name)
+            } else {
+                saveToLegacyPictures(bitmap, name)
+            }
+            runOnUiThread { toast(getString(if (ok) R.string.saved else R.string.save_failed)) }
         }
         storeCurrentPicture(bitmap, currentPictureId ?: newPictureId())
-        toast(getString(if (ok) R.string.saved else R.string.save_failed))
     }
 
     // ---- my pictures ----------------------------------------------------------
@@ -1063,15 +1093,16 @@ class MainActivity : AppCompatActivity() {
 
     /**
      * Writes the paper into the app's own pictures under [id]. The copy happens
-     * here on the UI thread; encoding goes to the worker like autosave.
+     * here on the UI thread; encoding goes to the worker like autosave, and so does
+     * the [skipIfBlank] check, which reads every pixel.
      */
-    private fun storeCurrentPicture(flat: Bitmap, id: String) {
+    private fun storeCurrentPicture(flat: Bitmap, id: String, skipIfBlank: Boolean = false) {
         val session = binding.paintView.saveSession()
+        val paper = binding.paintView.paperColor
         currentPictureId = id
-        if (ioExecutor.isShutdown) return
-        ioExecutor.execute {
+        IO.execute {
             try {
-                pictures.save(id, session, flat)
+                if (!skipIfBlank || !isBlank(flat, paper)) pictures.save(id, session, flat)
             } catch (e: Exception) {
                 runOnUiThread { toast(getString(R.string.save_failed)) }
             }
@@ -1086,9 +1117,8 @@ class MainActivity : AppCompatActivity() {
      */
     private fun openPicture(id: String) {
         val flat = binding.paintView.exportBitmap()
-        if (flat != null && !isBlank(flat)) storeCurrentPicture(flat, currentPictureId ?: newPictureId())
-        if (ioExecutor.isShutdown) return
-        ioExecutor.execute {
+        if (flat != null) storeCurrentPicture(flat, currentPictureId ?: newPictureId(), skipIfBlank = true)
+        IO.execute {
             val loaded = try { pictures.load(id) } catch (e: Exception) { null }
             runOnUiThread {
                 if (loaded == null) {
@@ -1108,15 +1138,14 @@ class MainActivity : AppCompatActivity() {
             .setPositiveButton(R.string.picture_delete) { _, _ ->
                 if (currentPictureId == id) currentPictureId = null
                 // After any pending save of this same picture, or it comes back.
-                if (!ioExecutor.isShutdown) ioExecutor.execute { pictures.delete(id) }
+                IO.execute { pictures.delete(id) }
                 then()
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
     }
 
-    private fun isBlank(bitmap: Bitmap): Boolean {
-        val paper = binding.paintView.paperColor
+    private fun isBlank(bitmap: Bitmap, paper: Int): Boolean {
         val pixels = IntArray(bitmap.width * bitmap.height)
         bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
         return pixels.all { it == paper }
@@ -1202,6 +1231,17 @@ class MainActivity : AppCompatActivity() {
         /** The photo under the ops, one file per photo: paper-<id>.png. */
         const val PAPER_PREFIX = "paper-"
         const val AUTOSAVE_DELAY_MS = 1200L
+        /** However busy the child, no change waits longer than this to be saved. */
+        const val AUTOSAVE_MAX_WAIT_MS = 10_000L
+        const val TAG = "ChildPaint"
+
+        /**
+         * Every write and read of the app's files, one at a time, in order. One per
+         * process, not per activity: a recreated activity must queue behind the
+         * saves its predecessor left running, or it reads half-old files and two
+         * threads race on the same temp file.
+         */
+        val IO: ExecutorService = Executors.newSingleThreadExecutor()
 
         /** Long enough to fetch a grown-up, short enough not to be a punishment. */
         const val ALARM_MS = 8000L
