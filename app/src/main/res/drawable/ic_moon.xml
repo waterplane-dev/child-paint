@@ -3,6 +3,6 @@
     android:width="24dp" android:height="24dp"
     android:viewportWidth="24" android:viewportHeight="24">
     <path android:pathData="M15.5,4 A8.5,8.5 0 1,0 19.5,13.5 A6.6,6.6 0 1,1 15.5,4 Z"
-        android:strokeColor="#000000" android:strokeWidth="2"
+        android:strokeColor="#000000" android:strokeWidth="2.5"
         android:strokeLineCap="round" android:strokeLineJoin="round" />
 </vector>

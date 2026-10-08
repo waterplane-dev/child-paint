@@ -1,11 +1,90 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.ChildPaint" parent="Theme.Material3.Light.NoActionBar">
+    <!-- One Material 3 theme built from the tokens in colors.xml, so dialogs,
+         sheets, chips and check boxes come out in the app's own colours rather
+         than the library's purple. Per-API additions live in values-v27 and
+         values-v31, which is why the attributes sit on a Base style. -->
+    <style name="Base.Theme.ChildPaint" parent="Theme.Material3.Light.NoActionBar">
+        <item name="colorPrimary">@color/accent</item>
+        <item name="colorOnPrimary">@color/on_accent</item>
+        <item name="colorPrimaryContainer">@color/accent_soft</item>
+        <item name="colorOnPrimaryContainer">@color/ink</item>
+        <item name="colorSecondary">@color/accent</item>
+        <item name="colorOnSecondary">@color/on_accent</item>
+        <item name="colorSecondaryContainer">@color/accent_soft</item>
+        <item name="colorOnSecondaryContainer">@color/ink</item>
+        <item name="colorSurface">@color/surface</item>
+        <item name="colorOnSurface">@color/ink</item>
+        <item name="colorOnSurfaceVariant">@color/ink_soft</item>
+        <item name="colorSurfaceContainer">@color/surface</item>
+        <item name="colorSurfaceContainerLow">@color/surface</item>
+        <item name="colorSurfaceContainerHigh">@color/surface</item>
+        <item name="colorSurfaceContainerHighest">@color/chrome</item>
+        <item name="colorOutline">@color/lip</item>
+        <item name="colorOutlineVariant">@color/lip</item>
+        <item name="android:textColorPrimary">@color/ink</item>
+        <item name="android:textColorSecondary">@color/ink_soft</item>
+        <item name="android:fontFamily">@font/fredoka</item>
+        <item name="fontFamily">@font/fredoka</item>
+
         <!-- Immersive mode hides the bars but the decor still shows through where
              they were; without this the strip renders black in kid mode. -->
         <item name="android:windowBackground">@color/chrome</item>
         <item name="android:statusBarColor">@color/chrome</item>
         <item name="android:navigationBarColor">@color/chrome</item>
         <item name="android:windowLightStatusBar">true</item>
+
+        <item name="materialAlertDialogTheme">@style/ThemeOverlay.ChildPaint.Dialog</item>
+        <item name="bottomSheetDialogTheme">@style/ThemeOverlay.ChildPaint.BottomSheet</item>
+        <item name="chipStyle">@style/Widget.ChildPaint.Chip</item>
+    </style>
+
+    <style name="Theme.ChildPaint" parent="Base.Theme.ChildPaint" />
+
+    <style name="ThemeOverlay.ChildPaint.Dialog" parent="ThemeOverlay.Material3.MaterialAlertDialog">
+        <item name="materialAlertDialogTitleTextStyle">@style/Widget.ChildPaint.DialogTitle</item>
+        <item name="materialAlertDialogBodyTextStyle">@style/Widget.ChildPaint.DialogBody</item>
+        <item name="buttonBarPositiveButtonStyle">@style/Widget.ChildPaint.Button.Filled</item>
+        <item name="buttonBarNegativeButtonStyle">@style/Widget.ChildPaint.Button.Text</item>
+        <item name="buttonBarNeutralButtonStyle">@style/Widget.ChildPaint.Button.Text</item>
+    </style>
+
+    <style name="Widget.ChildPaint.DialogTitle" parent="MaterialAlertDialog.Material3.Title.Text">
+        <item name="android:textSize">22sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@color/ink</item>
+    </style>
+
+    <style name="Widget.ChildPaint.DialogBody" parent="MaterialAlertDialog.Material3.Body.Text">
+        <item name="android:textSize">15sp</item>
+        <item name="android:textColor">@color/ink_soft</item>
+    </style>
+
+    <!-- The dialog's main action is a solid pill, the way back out is plain text:
+         the one to press is the one that looks like a button. -->
+    <style name="Widget.ChildPaint.Button.Filled" parent="Widget.Material3.Button">
+        <item name="android:textSize">16sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:paddingStart">22dp</item>
+        <item name="android:paddingEnd">22dp</item>
+    </style>
+
+    <style name="Widget.ChildPaint.Button.Text" parent="Widget.Material3.Button.TextButton.Dialog">
+        <item name="android:textSize">16sp</item>
+        <item name="android:textColor">@color/ink_soft</item>
+    </style>
+
+    <style name="ThemeOverlay.ChildPaint.BottomSheet" parent="ThemeOverlay.Material3.BottomSheetDialog">
+        <item name="bottomSheetStyle">@style/Widget.ChildPaint.BottomSheet</item>
+    </style>
+
+    <style name="Widget.ChildPaint.BottomSheet" parent="Widget.Material3.BottomSheet.Modal">
+        <item name="backgroundTint">@color/surface</item>
+    </style>
+
+    <!-- The duration choices in the kid-mode setup: one of them is on. -->
+    <style name="Widget.ChildPaint.Chip" parent="Widget.Material3.Chip.Filter">
+        <item name="android:textSize">15sp</item>
+        <item name="chipMinHeight">40dp</item>
     </style>
 </resources>

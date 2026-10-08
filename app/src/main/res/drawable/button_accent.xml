@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The accent pill with a lip under it, as the code-built toolbar buttons have,
+     for the few buttons that live in XML. Pressing sinks the face onto the lip. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_pressed="true">
+        <layer-list>
+            <item>
+                <shape android:shape="rectangle">
+                    <corners android:radius="26dp" />
+                    <solid android:color="@color/accent_lip" />
+                </shape>
+            </item>
+            <item android:top="4dp">
+                <shape android:shape="rectangle">
+                    <corners android:radius="26dp" />
+                    <solid android:color="@color/accent" />
+                </shape>
+            </item>
+        </layer-list>
+    </item>
+    <item>
+        <layer-list>
+            <item>
+                <shape android:shape="rectangle">
+                    <corners android:radius="26dp" />
+                    <solid android:color="@color/accent_lip" />
+                </shape>
+            </item>
+            <item android:bottom="4dp">
+                <shape android:shape="rectangle">
+                    <corners android:radius="26dp" />
+                    <solid android:color="@color/accent" />
+                </shape>
+            </item>
+        </layer-list>
+    </item>
+</selector>

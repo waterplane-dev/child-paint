@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Tag key for a view's rest scale; see KidChrome.kt. -->
+    <item name="rest_scale" type="id" />
+    <!-- Tag key for whether a button currently wears the selected look. -->
+    <item name="selected_look" type="id" />
+</resources>

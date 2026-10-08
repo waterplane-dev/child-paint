@@ -3,15 +3,18 @@ package com.childpaint
 import android.app.Activity
 import android.content.Context
 import android.text.InputType
-import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
-import android.widget.CheckBox
-import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
-import androidx.appcompat.app.AlertDialog
+import com.google.android.material.checkbox.MaterialCheckBox
+import com.google.android.material.chip.Chip
+import com.google.android.material.chip.ChipGroup
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.textfield.TextInputEditText
+import com.google.android.material.textfield.TextInputLayout
 import kotlin.random.Random
 
 /**
@@ -45,72 +48,62 @@ fun Activity.showKidModeSetup(state: KidModeState, onStart: () -> Unit) {
 
     val durationLabel = TextView(this).apply {
         text = getString(R.string.kid_setup_duration)
-        setPadding(0, 0, 0, dpOf(8))
+        textSize = 16f
+        setPadding(0, 0, 0, dpOf(4))
     }
 
-    val durationGroup = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-    val durationButtons = mutableListOf<Pair<Int, TextView>>()
-
-    val customField = EditText(this).apply {
-        hint = getString(R.string.kid_setup_custom_hint)
-        inputType = InputType.TYPE_CLASS_NUMBER
-        visibility = View.GONE
-    }
-
+    val customField = numberField(getString(R.string.kid_setup_custom_hint), password = false)
+    customField.layout.visibility = View.GONE
     var customSelected = false
 
-    fun markDuration(minutes: Int) {
+    // One chip is always on, which is the whole of the duration UI: nothing to
+    // confirm, nothing to type unless "Custom" is the chip that is on.
+    val durationGroup = ChipGroup(this).apply {
+        isSingleSelection = true
+        isSelectionRequired = true
+        chipSpacingHorizontal = dpOf(8)
+        chipSpacingVertical = dpOf(2)
+    }
+    for ((minutes, labelRes) in DURATION_CHOICES) {
+        durationGroup.addView(Chip(this).apply {
+            id = View.generateViewId()
+            text = getString(labelRes)
+            isCheckable = true
+            isChecked = minutes == selectedMinutes
+            tag = minutes
+        })
+    }
+    durationGroup.setOnCheckedStateChangeListener { group, checkedIds ->
+        val chip = checkedIds.firstOrNull()?.let { group.findViewById<Chip>(it) }
+            ?: return@setOnCheckedStateChangeListener
+        val minutes = chip.tag as Int
         customSelected = minutes == CUSTOM_MINUTES
         if (!customSelected) selectedMinutes = minutes
-        customField.visibility = if (customSelected) View.VISIBLE else View.GONE
-        for ((value, view) in durationButtons) {
-            view.setBackgroundColor(if (value == minutes) 0xFFFFE0B2.toInt() else 0x00000000)
-            view.setTypeface(null, if (value == minutes) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
-        }
+        customField.layout.visibility = if (customSelected) View.VISIBLE else View.GONE
     }
 
-    // Two per row keeps the dialog compact without a chip dependency.
-    DURATION_CHOICES.chunked(2).forEach { pair ->
-        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        for ((minutes, labelRes) in pair) {
-            val button = TextView(this).apply {
-                text = getString(labelRes)
-                gravity = Gravity.CENTER
-                setPadding(dpOf(8), dpOf(12), dpOf(8), dpOf(12))
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                setOnClickListener { markDuration(minutes) }
-            }
-            durationButtons += minutes to button
-            row.addView(button)
-        }
-        durationGroup.addView(row)
-    }
+    val pinField = numberField(getString(R.string.kid_setup_pin_hint), password = true)
+    pinField.edit.setText(state.pin.orEmpty())
 
-    val pinField = EditText(this).apply {
-        hint = getString(R.string.kid_setup_pin_hint)
-        inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD
-        setText(state.pin.orEmpty())
-    }
-
-    val requirePin = CheckBox(this).apply {
+    val requirePin = MaterialCheckBox(this).apply {
         text = getString(R.string.kid_setup_require_pin)
         isChecked = state.requirePin
-        setOnCheckedChangeListener { _, checked -> pinField.visibility = if (checked) View.VISIBLE else View.GONE }
+        setOnCheckedChangeListener { _, checked -> pinField.layout.visibility = if (checked) View.VISIBLE else View.GONE }
     }
-    pinField.visibility = if (requirePin.isChecked) View.VISIBLE else View.GONE
+    pinField.layout.visibility = if (requirePin.isChecked) View.VISIBLE else View.GONE
 
-    val requireMath = CheckBox(this).apply {
+    val requireMath = MaterialCheckBox(this).apply {
         text = getString(R.string.kid_setup_require_math)
         isChecked = state.requireMath
     }
 
     // How the end of the session announces itself. A grown-up in the next room
     // cannot see the overlay, and a child who cannot read will not tell them.
-    val alertVibrate = CheckBox(this).apply {
+    val alertVibrate = MaterialCheckBox(this).apply {
         text = getString(R.string.kid_setup_alert_vibrate)
         isChecked = state.alertVibrate
     }
-    val alertSound = CheckBox(this).apply {
+    val alertSound = MaterialCheckBox(this).apply {
         text = getString(R.string.kid_setup_alert_sound)
         isChecked = state.alertSound
     }
@@ -120,46 +113,46 @@ fun Activity.showKidModeSetup(state: KidModeState, onStart: () -> Unit) {
     val extrasHint = TextView(this).apply {
         text = getString(R.string.kid_setup_extras_hint)
         alpha = 0.7f
+        textSize = 13f
         setPadding(0, dpOf(12), 0, 0)
     }
 
     val content = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        setPadding(pad, dpOf(12), pad, 0)
+        setPadding(pad, dpOf(8), pad, 0)
         addView(durationLabel)
         addView(durationGroup)
-        addView(customField)
+        addView(customField.layout)
         addView(requirePin)
-        addView(pinField)
+        addView(pinField.layout)
         addView(requireMath)
         addView(alertVibrate)
         addView(alertSound)
         addView(extrasHint)
     }
-    markDuration(selectedMinutes)
 
-    val dialog = AlertDialog.Builder(this)
+    val dialog = MaterialAlertDialogBuilder(this)
         .setTitle(R.string.kid_setup_title)
         .setMessage(R.string.kid_setup_explainer)
-        .setView(content)
+        .setView(ScrollView(this).apply { addView(content) })
         .setPositiveButton(R.string.kid_setup_start, null)
         .setNegativeButton(R.string.cancel, null)
         .create()
 
     dialog.show()
     // Overriding the click after show() keeps the dialog open on a bad PIN.
-    dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+    dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
         if (customSelected) {
-            val custom = customField.text.toString().toIntOrNull()
+            val custom = customField.edit.text.toString().toIntOrNull()
             if (custom == null || custom !in 1..1440) {
-                customField.error = getString(R.string.kid_setup_custom_error)
+                customField.layout.error = getString(R.string.kid_setup_custom_error)
                 return@setOnClickListener
             }
             selectedMinutes = custom
         }
-        val pin = pinField.text.toString()
+        val pin = pinField.edit.text.toString()
         if (requirePin.isChecked && pin.length != 4) {
-            pinField.error = getString(R.string.kid_setup_pin_error)
+            pinField.layout.error = getString(R.string.kid_setup_pin_error)
             return@setOnClickListener
         }
         state.start(
@@ -185,15 +178,15 @@ fun Activity.showKidModeSetup(state: KidModeState, onStart: () -> Unit) {
  * the photo picker, not a determined attacker.
  */
 fun Activity.showParentExtras(settings: ParentSettings, onChanged: () -> Unit) {
-    val photo = CheckBox(this).apply {
+    val photo = MaterialCheckBox(this).apply {
         text = getString(R.string.extras_photo)
         isChecked = settings.photoPaper
     }
-    val shapes = CheckBox(this).apply {
+    val shapes = MaterialCheckBox(this).apply {
         text = getString(R.string.extras_fun_shapes)
         isChecked = settings.funShapes
     }
-    val hideToolbar = CheckBox(this).apply {
+    val hideToolbar = MaterialCheckBox(this).apply {
         text = getString(R.string.extras_hide_toolbar)
         isChecked = settings.hideToolbar
     }
@@ -208,14 +201,14 @@ fun Activity.showParentExtras(settings: ParentSettings, onChanged: () -> Unit) {
     }
     val content = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        setPadding(dpOf(20), dpOf(12), dpOf(20), 0)
+        setPadding(dpOf(20), dpOf(8), dpOf(20), 0)
         addView(photo)
         addView(shapes)
         addView(hideToolbar)
         addView(version)
     }
 
-    AlertDialog.Builder(this)
+    MaterialAlertDialogBuilder(this)
         .setTitle(R.string.extras_title)
         .setMessage(R.string.extras_explainer)
         .setView(content)
@@ -266,7 +259,7 @@ private fun Activity.runUnlockStep(
 
     val step = steps[index]
     if (step == STEP_CONFIRM) {
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle(R.string.unlock_title)
             .setMessage(R.string.unlock_confirm)
             .setPositiveButton(R.string.ok) { _, _ -> onUnlocked() }
@@ -286,39 +279,40 @@ private fun Activity.runUnlockStep(
     // Only the last barrier is rate limited. If a wrong sum counted, a child
     // hammering the maths question could lock the parent out of their own phone.
     val countsTowardLockout = index == steps.lastIndex
-    val field = EditText(this).apply {
-        inputType = InputType.TYPE_CLASS_NUMBER or
-            (if (step == STEP_PIN) InputType.TYPE_NUMBER_VARIATION_PASSWORD else 0)
-        setPadding(dpOf(20), dpOf(16), dpOf(20), dpOf(16))
+    val field = numberField(hint = null, password = step == STEP_PIN)
+    val content = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(dpOf(20), dpOf(4), dpOf(20), 0)
+        addView(field.layout)
     }
 
-    val dialog = AlertDialog.Builder(this)
+    val dialog = MaterialAlertDialogBuilder(this)
         .setTitle(R.string.unlock_title)
         .setMessage(prompt)
-        .setView(field)
+        .setView(content)
         .setPositiveButton(R.string.ok, null)
         .setNegativeButton(R.string.cancel, null)
         .create()
 
     // Keyboard up with the dialog, same as the text tool: the parent is answering
     // this one-handed while a child waits.
-    field.requestFocus()
+    field.edit.requestFocus()
     dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE)
     dialog.show()
-    field.post {
+    field.edit.post {
         getSystemService(InputMethodManager::class.java)
-            ?.showSoftInput(field, InputMethodManager.SHOW_IMPLICIT)
+            ?.showSoftInput(field.edit, InputMethodManager.SHOW_IMPLICIT)
     }
-    dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-        val entered = field.text.toString().trim()
+    dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+        val entered = field.edit.text.toString().trim()
         val correct = if (step == STEP_MATH) entered.toIntOrNull() == a + b else entered == state.pin
         if (!correct) {
-            field.text.clear()
+            field.edit.text?.clear()
             if (countsTowardLockout && state.registerFailedUnlock()) {
                 dialog.dismiss()
                 showLockedOut(state.unlockBlockedSeconds)
             } else {
-                field.error = getString(R.string.unlock_wrong)
+                field.layout.error = getString(R.string.unlock_wrong)
             }
             return@setOnClickListener
         }
@@ -337,11 +331,43 @@ private fun Activity.showLockedOut(seconds: Long) {
         val secs = seconds.toInt()
         resources.getQuantityString(R.plurals.unlock_blocked_seconds, secs, secs)
     }
-    AlertDialog.Builder(this)
+    MaterialAlertDialogBuilder(this)
         .setTitle(R.string.unlock_blocked_title)
         .setMessage(message)
         .setPositiveButton(R.string.ok, null)
         .show()
+}
+
+/** An outlined number field with its label, and the box that shows its error. */
+private class NumberField(val layout: TextInputLayout, val edit: TextInputEditText)
+
+private fun Activity.numberField(hint: String?, password: Boolean): NumberField {
+    val layout = TextInputLayout(this, null, com.google.android.material.R.attr.textInputOutlinedStyle).apply {
+        this.hint = hint
+        layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply { topMargin = dpOf(8) }
+    }
+    val edit = TextInputEditText(layout.context).apply {
+        val face = typeface
+        inputType = InputType.TYPE_CLASS_NUMBER or
+            (if (password) InputType.TYPE_NUMBER_VARIATION_PASSWORD else 0)
+        // A password input type swaps the face for monospace; put the app's back.
+        typeface = face
+        layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        )
+        // A fresh keystroke clears the "not right" under the box.
+        addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { layout.error = null }
+            override fun afterTextChanged(s: android.text.Editable?) = Unit
+        })
+    }
+    layout.addView(edit)
+    return NumberField(layout, edit)
 }
 
 private fun Context.dpOf(value: Int): Int = (value * resources.displayMetrics.density).toInt()

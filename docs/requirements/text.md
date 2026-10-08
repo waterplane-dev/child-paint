@@ -15,7 +15,12 @@ Text supports forced line breaks based on the text box size, with the box width 
 - asked: 2026-08-24 (session 2eaa57cc)
 - shipped: dd7b889, 86e915f
 
-### R-text-004 · requested
+### R-text-004 · superseded
 Text elements can be resized, including an adjustable font size.
 - asked: 2026-08-24 (session 2eaa57cc)
+- superseded-by: R-text-005
+
+### R-text-005 · requested
+There is no text dialog: the child draws the rectangle the text should go in, the keyboard comes up, and the letters appear in that box on the canvas as they are typed, at the largest font size that fits the drawn box. Making the box bigger or smaller makes the text bigger or smaller.
+- asked: 2026-09-26 (session 45619be9)
 

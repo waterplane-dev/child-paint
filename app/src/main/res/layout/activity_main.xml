@@ -3,12 +3,28 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
+<!-- The keyboard's target for the text tool. It is never seen: what it holds is
+     drawn into the box on the paper, letter by letter, where the child drew it.
+     First child so everything else covers it. -->
+<EditText
+    android:id="@+id/textInput"
+    android:layout_width="1dp"
+    android:layout_height="1dp"
+    android:alpha="0"
+    android:background="@null"
+    android:importantForAutofill="no"
+    android:inputType="text|textCapSentences"
+    android:imeOptions="actionDone|flagNoExtractUi|flagNoFullscreen"
+    android:maxLength="200" />
+
+<!-- White behind both the paper and the tray, so the tray's rounded top corners
+     show paper in the notches and the tray reads as lying on the page. -->
 <LinearLayout
     android:id="@+id/paperColumn"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="@color/chrome">
+    android:background="@color/face">
 
     <com.childpaint.PaintCanvasView
         android:id="@+id/paintView"
@@ -19,57 +35,52 @@
     <!-- Every control is on screen at once: a child should never have to scroll
          a toolbar to find the star. Rows are weight-filled so they fit any width.
          With the hide-the-tools extra on, this whole block is moved into
-         toolbarOverlay below and floats over the paper instead. -->
+         toolbarOverlay below and floats over the paper instead. Children are not
+         clipped because a pressed button squishes and a chosen colour grows. -->
     <LinearLayout
         android:id="@+id/toolbar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:background="@color/chrome"
-        android:paddingHorizontal="8dp"
-        android:paddingTop="6dp"
+        android:background="@drawable/tray"
+        android:elevation="12dp"
+        android:clipChildren="false"
+        android:clipToPadding="false"
+        android:paddingHorizontal="10dp"
+        android:paddingTop="12dp"
         android:paddingBottom="8dp">
 
         <LinearLayout
             android:id="@+id/colorGrid"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical" />
+            android:orientation="vertical"
+            android:clipChildren="false"
+            android:clipToPadding="false" />
 
-        <LinearLayout
+        <com.childpaint.BrushSizeSlider
+            android:id="@+id/sizeBar"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:paddingVertical="2dp">
-
-            <View
-                android:id="@+id/sizePreview"
-                android:layout_width="40dp"
-                android:layout_height="40dp" />
-
-            <SeekBar
-                android:id="@+id/sizeBar"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginStart="8dp"
-                android:paddingHorizontal="12dp"
-                android:max="100"
-                android:progress="16" />
-        </LinearLayout>
+            android:layout_height="48dp"
+            android:layout_marginTop="2dp"
+            android:layout_marginBottom="2dp"
+            android:layout_marginHorizontal="4dp" />
 
         <LinearLayout
             android:id="@+id/toolGrid"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical" />
+            android:orientation="vertical"
+            android:clipChildren="false"
+            android:clipToPadding="false" />
 
         <LinearLayout
             android:id="@+id/actionRow"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal" />
+            android:orientation="horizontal"
+            android:clipChildren="false"
+            android:clipToPadding="false" />
     </LinearLayout>
 </LinearLayout>
 
@@ -82,19 +93,21 @@
         android:id="@+id/toolbarOverlay"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_gravity="bottom" />
+        android:layout_gravity="bottom"
+        android:clipChildren="false" />
 
     <!-- The way back to the tools once they are hidden. Deliberately a chunky
          target at the bottom edge, in the same chrome as every other button. -->
     <ImageView
         android:id="@+id/toolbarHandle"
-        android:layout_width="86dp"
-        android:layout_height="34dp"
+        android:layout_width="96dp"
+        android:layout_height="40dp"
         android:layout_gravity="bottom|center_horizontal"
-        android:layout_marginBottom="10dp"
+        android:layout_marginBottom="12dp"
         android:src="@drawable/ic_chevron_up"
         android:scaleType="fitCenter"
-        android:paddingVertical="6dp"
+        android:paddingTop="7dp"
+        android:paddingBottom="11dp"
         android:contentDescription="@string/show_tools"
         android:visibility="gone" />
 
@@ -118,7 +131,10 @@
             android:id="@+id/timerBar"
             style="?android:attr/progressBarStyleHorizontal"
             android:layout_width="match_parent"
-            android:layout_height="16dp"
+            android:layout_height="14dp"
+            android:layout_marginHorizontal="12dp"
+            android:layout_marginTop="8dp"
+            android:progressDrawable="@drawable/timer_progress"
             android:max="1000"
             android:progress="1000" />
 
@@ -127,14 +143,32 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:paddingHorizontal="16dp"
-            android:paddingVertical="6dp"
+            android:paddingHorizontal="18dp"
+            android:paddingVertical="8dp"
             android:text="@string/last_minute"
-            android:textSize="15sp"
+            android:textSize="16sp"
             android:textStyle="bold"
             android:visibility="gone" />
     </LinearLayout>
 
+    <!-- The in-app hint that stands in for a toast: a dark pill at the top of the
+         paper, faded in and out by the activity. -->
+    <TextView
+        android:id="@+id/hintPill"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|center_horizontal"
+        android:layout_marginTop="36dp"
+        android:layout_marginHorizontal="24dp"
+        android:background="@drawable/hint_pill"
+        android:elevation="8dp"
+        android:gravity="center"
+        android:paddingHorizontal="22dp"
+        android:paddingVertical="12dp"
+        android:textColor="#FFFFFFFF"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:visibility="gone" />
 
     <LinearLayout
         android:id="@+id/expiredOverlay"
@@ -142,49 +176,62 @@
         android:layout_height="match_parent"
         android:orientation="vertical"
         android:gravity="center"
-        android:background="#F21A1008"
+        android:background="@color/scrim"
         android:clickable="true"
         android:focusable="true"
-        android:padding="32dp"
+        android:padding="28dp"
         android:visibility="gone">
 
-        <ImageView
-            android:layout_width="72dp"
-            android:layout_height="72dp"
-            android:src="@drawable/ic_lock"
-            android:alpha="0.85"
-            android:contentDescription="@null" />
-
-        <TextView
-            android:layout_width="wrap_content"
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
-            android:text="@string/time_up_title"
-            android:textColor="#FFFFFFFF"
-            android:textSize="26sp"
-            android:textStyle="bold" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
+            android:orientation="vertical"
             android:gravity="center"
-            android:text="@string/time_up_hint"
-            android:textColor="#B3FFFFFF"
-            android:textSize="15sp" />
+            android:background="@drawable/card"
+            android:elevation="16dp"
+            android:padding="28dp">
 
-        <TextView
-            android:id="@+id/expiredUnlock"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="28dp"
-            android:paddingHorizontal="24dp"
-            android:paddingVertical="14dp"
-            android:text="@string/grown_ups"
-            android:drawableStart="@drawable/ic_lock"
-            android:drawablePadding="10dp"
-            android:drawableTint="#FFFFFFFF"
-            android:textColor="#FFFFFFFF"
-            android:textSize="16sp" />
+            <ImageView
+                android:layout_width="84dp"
+                android:layout_height="84dp"
+                android:src="@drawable/ic_moon"
+                android:tint="@color/accent"
+                android:contentDescription="@null" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="@string/time_up_title"
+                android:textColor="@color/ink"
+                android:textSize="28sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:gravity="center"
+                android:text="@string/time_up_hint"
+                android:textColor="@color/ink_soft"
+                android:textSize="16sp" />
+
+            <TextView
+                android:id="@+id/expiredUnlock"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="28dp"
+                android:background="@drawable/button_accent"
+                android:paddingHorizontal="28dp"
+                android:paddingTop="14dp"
+                android:paddingBottom="18dp"
+                android:text="@string/grown_ups"
+                android:drawableStart="@drawable/ic_lock"
+                android:drawablePadding="10dp"
+                android:drawableTint="@color/on_accent"
+                android:textColor="@color/on_accent"
+                android:textSize="18sp"
+                android:textStyle="bold" />
+        </LinearLayout>
     </LinearLayout>
 </FrameLayout>

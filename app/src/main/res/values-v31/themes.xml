@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Android 12+ draws a splash from the launcher icon; the sky behind it is
+         the icon's own background, so the icon lands on the splash seamlessly.
+         The cutout mode is repeated because this style replaces the v27 one. -->
+    <style name="Theme.ChildPaint" parent="Base.Theme.ChildPaint">
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+        <item name="android:windowSplashScreenBackground">@color/splash</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">@color/splash</item>
+    </style>
+</resources>

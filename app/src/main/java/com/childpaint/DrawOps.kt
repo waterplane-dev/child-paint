@@ -388,12 +388,20 @@ private fun regionContains(path: Path, x: Float, y: Float): Boolean {
     return Region().apply { setPath(path, clip) }.contains(x.toInt(), y.toInt())
 }
 
+/**
+ * The face captions are set in: the app's rounded typeface, installed by the
+ * canvas when it is created. Null (in a JVM test, say) falls back to the system
+ * font with synthetic bold.
+ */
+var captionTypeface: android.graphics.Typeface? = null
+
 fun textPaint(color: Int, size: Float): TextPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
     this.color = color
     textSize = size
     // Bold because this is a child's caption over a drawing, not body copy: a
     // hairline glyph over a scribble is unreadable at any size.
-    isFakeBoldText = true
+    typeface = captionTypeface
+    isFakeBoldText = captionTypeface == null
 }
 
 /**
@@ -411,15 +419,65 @@ fun textLayout(text: String, width: Float, color: Int, size: Float): StaticLayou
 fun textHeight(text: String, width: Float, size: Float): Float =
     textLayout(text, width, Color.BLACK, size).height.toFloat()
 
-/** Draws the wrapped text with its first line at the top of [box]. */
+/**
+ * The biggest lettering at which [text] fits inside [width] x [height]: every line
+ * wrapped inside the width, the whole block inside the height, and no word so
+ * long it has to be broken mid-word. An empty box is sized for one letter, so
+ * the caret waiting in it is as tall as what is about to be typed.
+ */
+fun fitTextSize(text: String, width: Float, height: Float): Float {
+    val sample = text.ifBlank { "W" }
+    val words = sample.split(Regex("\\s+")).filter { it.isNotEmpty() }
+    fun fits(size: Float): Boolean {
+        val paint = textPaint(Color.BLACK, size)
+        if (words.any { paint.measureText(it) > width }) return false
+        return textHeight(sample, width, size) <= height
+    }
+    var lo = MIN_FIT_TEXT_SIZE
+    var hi = maxOf(height, lo)
+    if (!fits(lo)) return lo
+    // Twenty halvings of a few hundred pixels leaves an error far below one pixel.
+    repeat(20) {
+        val mid = (lo + hi) / 2f
+        if (fits(mid)) lo = mid else hi = mid
+    }
+    return lo
+}
+
+/** Below this the letters are unreadable anyway; a crammed box stops shrinking here. */
+const val MIN_FIT_TEXT_SIZE = 8f
+
+/** Where the wrapped block starts in [box]: centred top to bottom, as it is side to side. */
+private fun textTop(layout: StaticLayout, box: RectF): Float =
+    box.top + maxOf(0f, (box.height() - layout.height) / 2f)
+
+/** Draws the wrapped text centred in [box]. */
 fun drawTextBox(canvas: Canvas, text: String, box: RectF, color: Int, size: Float, angle: Float) {
     if (text.isEmpty()) return
     val layout = textLayout(text, box.width(), color, size)
     canvas.save()
     canvas.rotate(angle, box.centerX(), box.centerY())
-    canvas.translate(box.left, box.top)
+    canvas.translate(box.left, textTop(layout, box))
     layout.draw(canvas)
     canvas.restore()
+}
+
+/**
+ * The typing caret after the last letter of [text] laid out in [box], as an
+ * upright line (x, top, x, bottom) in the box's own unrotated frame.
+ */
+fun textCaret(text: String, box: RectF, size: Float): RectF {
+    val layout = textLayout(text, box.width(), Color.BLACK, size)
+    val top = textTop(layout, box)
+    if (text.isEmpty()) {
+        val metrics = textPaint(Color.BLACK, size).fontMetrics
+        val h = metrics.descent - metrics.ascent
+        val y = box.centerY() - h / 2f
+        return RectF(box.centerX(), y, box.centerX(), y + h)
+    }
+    val line = layout.getLineForOffset(text.length)
+    val x = box.left + layout.getPrimaryHorizontal(text.length)
+    return RectF(x, top + layout.getLineTop(line), x, top + layout.getLineBottom(line))
 }
 
 fun strokePaint(color: Int, width: Float): Paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {

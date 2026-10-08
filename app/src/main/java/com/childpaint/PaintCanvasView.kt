@@ -12,12 +12,14 @@ import android.graphics.PointF
 import android.graphics.Path
 import android.graphics.Rect
 import android.graphics.RectF
+import android.graphics.Typeface
 import android.graphics.drawable.Drawable
 import android.os.SystemClock
 import android.util.AttributeSet
 import android.util.TypedValue
 import android.view.MotionEvent
 import android.view.View
+import androidx.core.content.res.ResourcesCompat
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -37,17 +39,30 @@ class PaintCanvasView @JvmOverloads constructor(
 ) : View(context, attrs) {
 
     /**
-     * Called when text is wanted, with whatever the box already says — empty for a
-     * new box, the current text when an existing one was tapped to be edited. The
-     * box itself is held here until [addText] or [cancelText] answers.
+     * Called when a text box wants the keyboard, with whatever it already says —
+     * empty for a box just drawn, the current text when one was tapped to be
+     * edited. There is no dialog: the letters go straight into the box on the
+     * paper through [typeText], so the child sees them land where they drew.
      */
     var onTextRequested: ((existing: String) -> Unit)? = null
+
+    /** Called when the box being typed into stops being typed into; put the keyboard away. */
+    var onTextEditEnded: (() -> Unit)? = null
 
     /** Called on every touch that lands on the paper, before it is acted on. */
     var onCanvasTouched: (() -> Unit)? = null
 
     /** Called whenever the undo/redo availability changes. */
     var onHistoryChanged: (() -> Unit)? = null
+
+    init {
+        // Captions are set in the app's own rounded face, bold. Installed once,
+        // process-wide: the fitting maths in DrawOps has no context to load it with.
+        if (captionTypeface == null && !isInEditMode) {
+            captionTypeface = ResourcesCompat.getFont(context, R.font.fredoka)
+                ?.let { Typeface.create(it, Typeface.BOLD) }
+        }
+    }
 
     var paperColor: Int = Color.WHITE
 
@@ -72,15 +87,7 @@ class PaintCanvasView @JvmOverloads constructor(
         set(value) {
             field = value
             liveShape?.let { if (it.width != value) { it.width = value; it.changed = true } }
-            // The slider is the font control: it retypes the live text at the new
-            // size, which rewraps it, which is the whole point of a box.
-            liveText?.let {
-                if (it.size != value * TEXT_SIZE_FACTOR) {
-                    it.size = value * TEXT_SIZE_FACTOR
-                    it.changed = true
-                    it.reflow()
-                }
-            }
+            // Not the text: its lettering is whatever fills the box it was drawn in.
             invalidate()
         }
 
@@ -93,13 +100,7 @@ class PaintCanvasView @JvmOverloads constructor(
             invalidate()
         }
 
-    /** Text is sized off the brush slider so one control drives both. */
-    val textSize: Float get() = strokeWidth * TEXT_SIZE_FACTOR
-
-    /** The box the pending text will land in, held while the dialog is up. */
-    private var pendingTextBox: RectF? = null
-
-    /** Set when the dialog was opened to edit existing text rather than add new. */
+    /** The live text the keyboard is typing into, if it is up. */
     private var editingText: LiveText? = null
 
     private val ops = mutableListOf<DrawOp>()
@@ -264,11 +265,10 @@ class PaintCanvasView @JvmOverloads constructor(
     /**
      * Text that has been typed but not yet committed, laid out inside a box.
      *
-     * The box width is the wrap width, so dragging the corner handle rewraps the
-     * text instead of stretching it, and the height is never an input: it is
-     * whatever the wrapped text turned out to be, recomputed by [reflow] after
-     * every change. Font size is separate — the size slider drives it — which is
-     * what makes "smaller letters" and "narrower column" two different moves.
+     * The box is the rectangle the child drew, and the lettering is never an
+     * input: [reflow] makes it the biggest that fits the box, wrapped to its width,
+     * after every change. So more letters come out smaller, and the size knob or a
+     * pinch makes the box — and with it the words — bigger or smaller.
      */
     private class LiveText(
         var text: String,
@@ -276,22 +276,17 @@ class PaintCanvasView @JvmOverloads constructor(
         var color: Int,
         var size: Float
     ) : Live(x0, y0, x1, y1, 0f) {
-        /** A pinch scales the lettering with the column, or the text would rewrap mid-pinch. */
         override fun scaleBy(factor: Float) {
             super.scaleBy(factor)
-            size *= factor
             reflow()
         }
 
-        /** Normalises the box and drops the bottom edge onto the wrapped text. */
+        /** Normalises the box and fits the lettering to it. */
         fun reflow() {
-            val left = minOf(x0, x1)
-            val width = maxOf(abs(x1 - x0), MIN_TEXT_WIDTH)
-            val top = minOf(y0, y1)
-            x0 = left
-            x1 = left + width
-            y0 = top
-            y1 = top + textHeight(text, width, size)
+            val box = box()
+            x0 = box.left; x1 = box.left + maxOf(box.width(), MIN_TEXT_BOX)
+            y0 = box.top; y1 = box.top + maxOf(box.height(), MIN_TEXT_BOX)
+            size = fitTextSize(text, x1 - x0, y1 - y0)
         }
 
         /** Emptied text that was picked up records its deletion, so undo can bring it back. */
@@ -329,8 +324,19 @@ class PaintCanvasView @JvmOverloads constructor(
         }
     }
 
-    /** The shape or selection still floating above the bitmap, if there is one. */
+    /**
+     * The shape or selection still floating above the bitmap, if there is one.
+     * Whatever takes the text being typed into off it — settling, undo, the bin,
+     * a new page — also ends the typing, so the keyboard never outlives its box.
+     */
     private var live: Live? = null
+        set(value) {
+            field = value
+            if (editingText != null && editingText !== value) {
+                editingText = null
+                onTextEditEnded?.invoke()
+            }
+        }
     private val liveShape: LiveShape? get() = live as? LiveShape
     private val liveSelection: LiveSelection? get() = live as? LiveSelection
     private val liveText: LiveText? get() = live as? LiveText
@@ -744,12 +750,24 @@ class PaintCanvasView @JvmOverloads constructor(
         canvas.save()
         canvas.rotate(live.angle, live.centerX, live.centerY)
         val box = live.box()
+        if (live === editingText) drawCaret(canvas, live as LiveText)
         box.inset(-inset, -inset)
         drawMarquee(canvas, box)
         canvas.restore()
         val places = knobPlaces(live)
         for ((anchor, center) in places.values) drawString(canvas, anchor.x, anchor.y, center.x, center.y)
         for ((knob, place) in places) drawKnob(canvas, knob, place.second)
+    }
+
+    /** A blinking bar after the last letter, so the child can see where typing goes. */
+    private fun drawCaret(canvas: Canvas, text: LiveText) {
+        val on = (SystemClock.uptimeMillis() / CARET_BLINK_MS) % 2 == 0L
+        if (on) {
+            val caret = textCaret(text.text, text.box(), text.size)
+            val paint = strokePaint(text.color, maxOf(2f * resources.displayMetrics.density, text.size / 14f))
+            canvas.drawLine(caret.left, caret.top, caret.right, caret.bottom, paint)
+        }
+        postInvalidateDelayed(CARET_BLINK_MS)
     }
 
     private fun drawMarquee(canvas: Canvas, box: RectF) {
@@ -1162,13 +1180,6 @@ class PaintCanvasView @JvmOverloads constructor(
                 if (factor < 1f && minOf(box.width(), box.height()) * factor < min) return
                 live.scaleBy(factor)
             }
-            live is LiveText -> {
-                val left = minOf(live.x0, live.x1)
-                val right = maxOf(live.x0, live.x1) + dx
-                live.x0 = left
-                live.x1 = right
-                live.reflow()
-            }
             live is LiveShape && live.kind == ShapeKind.LINE -> {
                 live.x1 += dx
                 live.y1 += dy
@@ -1181,6 +1192,8 @@ class PaintCanvasView @JvmOverloads constructor(
                 val halfH = (box.height() / 2f + dy).coerceAtLeast(min / 2f)
                 live.x0 = cx - halfW; live.x1 = cx + halfW
                 live.y0 = cy - halfH; live.y1 = cy + halfH
+                // A bigger box is bigger writing.
+                (live as? LiveText)?.reflow()
             }
         }
     }
@@ -1227,7 +1240,7 @@ class PaintCanvasView @JvmOverloads constructor(
             else -> when (val m = pick.members.single()) {
                 is ShapeOp -> LiveShape(m.kind, m.x0, m.y0, m.x1, m.y1, m.color, m.width, m.style)
                     .also { it.angle = m.angle }
-                is TextOp -> LiveText(m.text, m.box.left, m.box.top, m.box.right, m.box.top, m.color, m.size)
+                is TextOp -> LiveText(m.text, m.box.left, m.box.top, m.box.right, m.box.bottom, m.color, m.size)
                     .also { it.angle = m.angle; it.reflow() }
                 is GroupOp -> LiveGroup(m.members, m.frame, m.layer, RectF(m.dst), m.angle)
                 is StrokeOp -> {
@@ -1311,7 +1324,7 @@ class PaintCanvasView @JvmOverloads constructor(
 
     private fun requestTextEdit(text: LiveText) {
         editingText = text
-        pendingTextBox = text.box()
+        invalidate()
         onTextRequested?.invoke(text.text)
     }
 
@@ -1351,18 +1364,25 @@ class PaintCanvasView @JvmOverloads constructor(
             Tool.FILL -> commit(FillOp(x.toInt(), y.toInt(), color, FloodFill.DEFAULT_TOLERANCE))
 
             Tool.TEXT -> {
-                // Dragging a box picks the column the text will wrap into; a plain
-                // tap gets a sensible default one, because a child who just wants a
-                // word should not have to know about boxes at all.
-                pendingTextBox = if (tappedInPlace) {
+                // The box drawn is where the words go and how big they are: they
+                // are fitted to it as they are typed. A plain tap gets a sensible
+                // default box, because a child who just wants a word should not
+                // have to know about boxes at all; a smudge is grown to one.
+                val box = if (tappedInPlace) {
                     val half = width * DEFAULT_TEXT_WIDTH / 2f
-                    RectF(x - half, y, x + half, y)
+                    val halfH = mm(STAMP_MM, 80f, 280f) / 2f
+                    RectF(x - half, y - halfH, x + half, y + halfH)
                 } else {
                     RectF(minOf(downX, x), minOf(downY, y), maxOf(downX, x), maxOf(downY, y))
                 }
-                editingText = null
-                invalidate()
-                onTextRequested?.invoke("")
+                val rect = Rect()
+                box.roundOut(rect)
+                bitmap?.let { growToMinimum(rect, it) }
+                val text = LiveText("", rect.left.toFloat(), rect.top.toFloat(), rect.right.toFloat(), rect.bottom.toFloat(), color, 0f)
+                    .also { it.reflow() }
+                live = text
+                requestTextEdit(text)
+                onHistoryChanged?.invoke()
             }
 
             // With the hand, tapping the empty paper is how a child puts the held
@@ -1458,49 +1478,40 @@ class PaintCanvasView @JvmOverloads constructor(
     }
 
     /**
-     * Answers the text dialog. The result is not committed: like a shape it lands
-     * as a live object, so it can be dragged, rewrapped and retyped before it
-     * becomes part of the picture.
+     * What the keyboard has typed so far, into the box it is typing into. The
+     * words are refitted on every letter, so the box stays full however much is
+     * written in it.
      */
-    fun addText(text: String) {
-        val box = pendingTextBox ?: return
-        pendingTextBox = null
-        val editing = editingText
-        editingText = null
-
-        if (editing != null) {
-            if (text.isBlank()) {
-                // Emptying the box is how you delete text you have not settled yet.
-                // Text the hand picked up off the paper is already history, so its
-                // deletion is recorded — and can be undone — rather than dropped.
-                if (editing.lifted) {
-                    editing.text = ""
-                    editing.changed = true
-                    commitLive()
-                } else {
-                    discardLive()
-                }
-                return
-            }
-            if (editing.text != text) editing.changed = true
-            editing.text = text
-            editing.reflow()
-            invalidate()
-            return
-        }
-
-        if (text.isBlank()) return
-        commitLive()
-        live = LiveText(text, box.left, box.top, box.right, box.top, color, textSize)
-            .also { it.reflow() }
+    fun typeText(text: String) {
+        val editing = editingText ?: return
+        if (editing.text == text) return
+        editing.text = text
+        editing.changed = true
+        editing.reflow()
         invalidate()
         onHistoryChanged?.invoke()
     }
 
-    /** The dialog was dismissed without an answer; forget the box it was for. */
-    fun cancelText() {
-        pendingTextBox = null
+    /**
+     * Where the box being typed into sits on the view, turned as it is turned, or
+     * null when nothing is being typed — what the keyboard must not cover.
+     */
+    fun typingBounds(): RectF? = editingText?.let { rotatedBounds(it.box(), it.angle) }
+
+    /**
+     * The keyboard's done key. The words stay live, to be dragged and sized; a box
+     * left empty goes — recorded, if the hand had picked it up off the paper, so
+     * undo can bring it back.
+     */
+    fun finishTyping() {
+        val editing = editingText ?: return
+        if (editing.text.isBlank()) {
+            if (editing.lifted) commitLive() else discardLive()
+            return
+        }
         editingText = null
+        invalidate()
+        onTextEditEnded?.invoke()
     }
 
     fun undo() {
@@ -1513,7 +1524,9 @@ class PaintCanvasView @JvmOverloads constructor(
             live = null
             // A picked-up thing goes back where it was.
             if (current.lifted) replayAll()
-            if (current.toOp() != null) {
+            // An empty text box records nothing either, but it is on screen, so
+            // taking it away is this press's whole work.
+            if (current.toOp() != null || (current is LiveText && !current.lifted)) {
                 invalidate()
                 onHistoryChanged?.invoke()
                 return
@@ -1538,7 +1551,7 @@ class PaintCanvasView @JvmOverloads constructor(
             is MoveOp -> liftRect(Rect(undone.src))
             is TextOp -> LiveText(
                 undone.text, undone.box.left, undone.box.top, undone.box.right,
-                undone.box.top, undone.color, undone.size
+                undone.box.bottom, undone.color, undone.size
             ).also { it.angle = undone.angle; it.reflow() }
             else -> null
         }
@@ -1597,12 +1610,11 @@ class PaintCanvasView @JvmOverloads constructor(
         /** Anything smaller than this is a slip of the finger, not a selection. */
         /** Two centimetres of real paper, whatever the screen density says. */
         const val MIN_SELECTION_MM = 20f
-        /** Text is sized off the brush slider; this is the multiplier between them. */
-        const val TEXT_SIZE_FACTOR = 4f
         /** A tapped text box gets this share of the paper width to wrap into. */
         const val DEFAULT_TEXT_WIDTH = 0.7f
-        /** Narrower than this and the box can no longer fit a single letter. */
-        const val MIN_TEXT_WIDTH = 40f
+        /** Smaller than this and the box can no longer fit a single letter. */
+        const val MIN_TEXT_BOX = 40f
+        const val CARET_BLINK_MS = 500L
         /** Knob diameter in real millimetres. */
         const val KNOB_MM = 12f
         /** How much further out than its drawn edge a knob still catches a finger. */

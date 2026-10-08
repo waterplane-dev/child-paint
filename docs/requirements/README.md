@@ -14,8 +14,8 @@ What this project is expected to do, as the person asked for it. Format and rule
 | [positioning](positioning.md) | 0 | 6 | 0 |
 | [selection](selection.md) | 1 | 1 | 0 |
 | [shapes](shapes.md) | 3 | 1 | 0 |
-| [text](text.md) | 1 | 3 | 0 |
+| [text](text.md) | 1 | 3 | 1 |
 | [timer](timer.md) | 0 | 3 | 0 |
-| [ui](ui.md) | 2 | 0 | 0 |
+| [ui](ui.md) | 3 | 0 | 0 |
 | [undo](undo.md) | 1 | 0 | 0 |
 | [unlock](unlock.md) | 0 | 3 | 0 |

@@ -59,13 +59,58 @@ shippable and that Play rejects. See `docs/release-checklist.md`.
 - `SquareView.kt` — a view that is as tall as it is wide. The colour swatches are
   weight-laid-out, so a fixed height made them ellipses on most screen widths.
 - `MainActivity.kt` — builds the toolbar in code (weighted grid rows, so it fits
-  any screen width), owns colour/tool selection, the text dialog, autosave, and
+  any screen width), owns colour/tool selection, the keyboard for text, autosave, and
   save-to-gallery.
 
 Every toolbar glyph is a vector drawable in `res/drawable/ic_*.xml`, tinted with
 one colour. They used to be emoji, which rendered as a mix of full-colour glyphs
 (bucket, sponge, floppy) and monochrome symbols (□ ○ △) — the set never read as
-one toolbar. Do not reintroduce emoji here.
+one toolbar. Do not reintroduce emoji here. Strokes are 2.5 units on a 24 grid:
+the 2-unit originals read as hairlines once the buttons got chunky.
+
+## Look and feel
+
+The chrome is one design system, and all of it is built from the tokens in
+`res/values/colors.xml`: a cream tray, warm near-black ink, one orange accent.
+Nothing in the UI uses a literal colour that is not one of those (the canvas
+palette and the knobs are drawing colours, not chrome).
+
+- `KidChrome.kt` is the one button. A control is a *face on a lip* — a rounded
+  face standing on a 4 dp darker band, like a key on a toy keyboard. Pressing
+  sinks the face onto the lip (`state_pressed` in the `StateListDrawable`) and
+  `squishOnPress()` scales the view down and springs it back with overshoot,
+  ticking the haptics on the way down. The selected tool wears the accent face
+  with a white glyph (`setSelectedLook`). Do not add a second button style.
+- A colour swatch is a `SwatchDrawable`: the colour on its own darker lip, with a
+  gloss, and a double ring (ink outside, white inside, so it reads on the black
+  swatch and the white one) when chosen. The chosen one also rests at 1.2× and
+  one dp higher in Z, so it overlaps its neighbours rather than the other way
+  round. That is why every row is `clipChildren = false`.
+- The size control is `BrushSizeSlider`, not a `SeekBar`: a wedge from thin to
+  fat in the colour that will come out of the brush, with a thumb that shows
+  the size as a dot. The wedge is painted in the eraser's pink when the eraser
+  is the tool. The quadratic dot size matches `progressToWidth`.
+- Hints go through `toast()` in the activity, which is no longer a system toast
+  but a dark pill (`hintPill`) that drops in at the top of the paper and fades.
+  One at a time; a new one replaces whatever is up. Keep calling `toast()`.
+- The drawer and My pictures are `BottomSheetDialog`s built by `kidSheet()`:
+  a title, a close button, the content, opened fully (`STATE_EXPANDED`,
+  `skipCollapsed`) so a tall grid never arrives half-hidden behind a peek.
+- Dialogs are `MaterialAlertDialogBuilder`, themed in `values/themes.xml`: the
+  positive button is a filled accent pill, the rest plain text, so the one to
+  press is the one that looks like a button. The parent's dialogs use Material
+  chips, check boxes and outlined text fields; the error shows under the field.
+- The typeface is Fredoka (`res/font/`, OFL — notice in `docs/fonts/`), applied
+  through the theme to every text and, via `captionTypeface` in `DrawOps.kt`,
+  to the text tool. The canvas installs it once in its `init`. **Changing the
+  font changes how a saved `TextOp` wraps**: the op stores the size it was
+  fitted at, in the old font's metrics, so an old caption may wrap differently.
+  That was accepted once, for this font; do not change the font casually.
+- The launcher icon is a vector (`ic_launcher_foreground` + `_monochrome`) and
+  the Android 12+ splash takes the same sky from `values-v31/themes.xml`. The
+  three theme files (`values`, `-v27`, `-v31`) share `Base.Theme.ChildPaint`;
+  each per-API file repeats the attributes of the one below it, because a
+  qualifier replaces the style, it does not extend it.
 
 ## Things that will bite you
 
@@ -144,12 +189,23 @@ one toolbar. Do not reintroduce emoji here.
 - The marquee is two strokes — a pale solid halo under dark dashes. One
   translucent grey box disappeared into a dark scribble, which is precisely the
   picture someone is most likely to be moving something around on.
-- Text is a box, not a point. `TextOp` carries a `RectF` whose **width is the
-  wrap width**; the bottom is an output, recomputed by `LiveText.reflow()` from
-  the laid-out `StaticLayout` height. So the size knob rewraps the text rather
-  than stretching it, the size slider changes the font (and rewraps), and a
-  pinch scales box and font together — deliberately, or the text would rewrap
-  mid-pinch.
+- Text is a box, and the **font size is an output**. The child draws the
+  rectangle; `LiveText.reflow()` sets the size to the largest at which the words
+  fit it (`fitTextSize`: wrapped to the width, inside the height, no word broken)
+  and `drawTextBox` centres the block in it. So typing more makes letters
+  smaller, the size knob and a pinch resize the box and the words follow, and the
+  size slider does not touch text. `TextOp` still stores the size it was fitted
+  at, so replay never refits.
+- There is **no text dialog**. Typing goes to an invisible `textInput` field in
+  the activity layout, and every change is handed to `typeText()`, which refits
+  the live box on the paper; the done key is `finishTyping()`. `live`'s setter
+  ends the typing (`onTextEditEnded` puts the keyboard away) whenever the box
+  stops being the live thing, so no path — settle, undo, bin, new page — leaves a
+  keyboard up for a box that is gone. The keyboard must never resize the paper
+  (op coordinates are canvas pixels): on API 30+ the window is `adjustResize`
+  under edge-to-edge, which does not resize but reports the IME inset, and
+  `keepTypingInView()` *translates* the paper column up so the box clears it;
+  below 30 it is `adjustNothing`.
 - Every live thing has **four knobs on strings** — move (hangs below), size
   (off the corner), turn (above), and a red bin (off the opposite corner) —
   whatever its size. The bin acts on lift, and only if the finger is still on it.
@@ -180,9 +236,10 @@ one toolbar. Do not reintroduce emoji here.
   the originals reappear. This is why checkpoints go through
   `checkpointUsable()` before replay: a snapshot that already has a now-hidden op
   painted in is the wrong starting point. A pick-up nobody moved records nothing.
-- Tapping a live text without moving reopens the dialog on it. There is nowhere
-  else a child would find "edit this", and `addText("")` on an existing box
-  deletes it — the same as its bin knob.
+- Tapping a live text without moving brings the keyboard back for it. There is
+  nowhere else a child would find "edit this". An empty box is thrown away when
+  it settles or on done — recorded as a deletion if the hand had picked it up —
+  and undo on an empty fresh box just removes the box.
 - The save button opens **My pictures**: "Save this picture" (gallery PNG *and*
   an editable copy) plus a tile per kept picture. Opening one first puts the
   current paper away — under its own picture, or as a new one — unless it is

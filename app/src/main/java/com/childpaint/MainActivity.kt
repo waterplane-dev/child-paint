@@ -14,7 +14,6 @@ import android.media.RingtoneManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.text.InputType
 import android.os.Environment
 import android.os.Handler
 import android.os.Looper
@@ -30,22 +29,22 @@ import android.view.WindowInsetsController
 import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
 import androidx.activity.OnBackPressedCallback
-import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.SeekBar
 import android.widget.TextView
-import android.widget.Toast
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.widget.doAfterTextChanged
 import com.childpaint.databinding.ActivityMainBinding
+import com.google.android.material.bottomsheet.BottomSheetBehavior
+import com.google.android.material.bottomsheet.BottomSheetDialog
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.Executors
@@ -119,21 +118,17 @@ class MainActivity : AppCompatActivity() {
         binding.paintView.onCanvasTouched = { if (settings.hideToolbar) showToolbar(false) }
         binding.toolbarHandle.setOnClickListener { showToolbar(true) }
 
-        binding.paintView.onTextRequested = { existing -> promptForText(existing) }
+        setUpTyping()
         binding.paintView.onHistoryChanged = {
             refreshHistoryButtons()
             scheduleAutosave()
         }
 
-        binding.sizeBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(bar: SeekBar, progress: Int, fromUser: Boolean) {
-                binding.paintView.strokeWidth = progressToWidth(progress)
-                updateSizePreview()
-            }
-            override fun onStartTrackingTouch(bar: SeekBar) = Unit
-            override fun onStopTrackingTouch(bar: SeekBar) = Unit
-        })
+        binding.sizeBar.onProgressChanged = { progress, _ ->
+            binding.paintView.strokeWidth = progressToWidth(progress)
+        }
 
+        binding.expiredUnlock.squishOnPress()
         binding.expiredUnlock.setOnClickListener { attemptUnlock() }
 
         // In kid mode Back must do nothing at all: the only way out is the guarded
@@ -454,6 +449,8 @@ class MainActivity : AppCompatActivity() {
         ViewCompat.setOnApplyWindowInsetsListener(binding.root) { view, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+            keyboardHeight = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
+            keepTypingInView()
             insets
         }
     }
@@ -491,13 +488,9 @@ class MainActivity : AppCompatActivity() {
             }
             target.addView(toolbar)
         }
-        binding.toolbarHandle.background = GradientDrawable().apply {
-            shape = GradientDrawable.RECTANGLE
-            cornerRadius = dp(17).toFloat()
-            setColor(0xF2FFFFFF.toInt())
-            setStroke(dp(2), 0xFFD8C4B2.toInt())
-        }
+        binding.toolbarHandle.background = plainButton(radiusDp = 20f)
         binding.toolbarHandle.imageTintList = ColorStateList.valueOf(ICON_TINT)
+        binding.toolbarHandle.squishOnPress()
         showToolbar(!hidden)
     }
 
@@ -531,7 +524,7 @@ class MainActivity : AppCompatActivity() {
      * the press-and-hold the clear button uses.
      */
     private fun onPhotoClicked() {
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle(R.string.photo_title)
             .setMessage(R.string.photo_confirm)
             .setPositiveButton(R.string.photo_pick) { _, _ ->
@@ -586,6 +579,9 @@ class MainActivity : AppCompatActivity() {
     /** Lays children out in fixed rows of [perRow], each stretched by weight. */
     private fun gridRow(): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
+        // A pressed button squishes and a chosen swatch grows past its cell.
+        clipChildren = false
+        clipToPadding = false
         layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT
@@ -618,6 +614,7 @@ class MainActivity : AppCompatActivity() {
             }
             val swatch = SquareView(this).apply {
                 layoutParams = weightedCell()
+                squishOnPress()
                 setOnClickListener { selectColor(color) }
             }
             colorSwatches += color to swatch
@@ -636,7 +633,7 @@ class MainActivity : AppCompatActivity() {
                 binding.toolGrid.addView(row)
             }
             val button = chromeButton(icon).apply {
-                layoutParams = cellParams(52)
+                layoutParams = cellParams(TOOL_CELL_DP)
                 setOnClickListener { selectTool(tool) }
             }
             toolButtons += tool to button
@@ -649,7 +646,7 @@ class MainActivity : AppCompatActivity() {
             binding.toolGrid.addView(row)
         }
         moreButton = chromeButton(R.drawable.ic_more).apply {
-            layoutParams = cellParams(52)
+            layoutParams = cellParams(TOOL_CELL_DP)
             setOnClickListener { showMoreTools() }
         }
         row.addView(moreButton)
@@ -659,7 +656,7 @@ class MainActivity : AppCompatActivity() {
         val remainder = (TOOLS.size + 1) % TOOLS_PER_ROW
         if (remainder != 0) {
             repeat(TOOLS_PER_ROW - remainder) {
-                row.addView(View(this).apply { layoutParams = cellParams(52) })
+                row.addView(View(this).apply { layoutParams = cellParams(TOOL_CELL_DP) })
             }
         }
     }
@@ -672,10 +669,11 @@ class MainActivity : AppCompatActivity() {
         val tools = moreTools()
         val grid = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(12), dp(12), dp(12), dp(12))
+            clipChildren = false
+            setPadding(dp(12), 0, dp(12), dp(12))
         }
         var row = gridRow()
-        lateinit var dialog: AlertDialog
+        lateinit var dialog: BottomSheetDialog
         tools.forEachIndexed { index, (tool, icon) ->
             if (index % MORE_PER_ROW == 0) {
                 row = gridRow()
@@ -683,7 +681,7 @@ class MainActivity : AppCompatActivity() {
             }
             row.addView(
                 chromeButton(icon).apply {
-                    layoutParams = cellParams(60)
+                    layoutParams = cellParams(DRAWER_CELL_DP)
                     setSelectedLook(binding.paintView.tool == tool)
                     setOnClickListener {
                         selectTool(tool)
@@ -696,14 +694,46 @@ class MainActivity : AppCompatActivity() {
         val remainder = tools.size % MORE_PER_ROW
         if (remainder != 0) {
             repeat(MORE_PER_ROW - remainder) {
-                row.addView(View(this).apply { layoutParams = cellParams(60) })
+                row.addView(View(this).apply { layoutParams = cellParams(DRAWER_CELL_DP) })
             }
         }
-        dialog = AlertDialog.Builder(this)
-            .setTitle(R.string.more_shapes_title)
-            .setView(grid)
-            .create()
+        dialog = kidSheet(getString(R.string.more_shapes_title), grid)
         dialog.show()
+    }
+
+    /**
+     * A sheet that slides up from the tools: a title with a close button, then
+     * [content]. Opened fully, so a tall grid never arrives half-hidden behind a
+     * peek that a child would have to drag. The close button is the one knob a
+     * child can find; tapping the paper above the sheet closes it as well.
+     */
+    private fun kidSheet(title: String, content: View): BottomSheetDialog {
+        val dialog = BottomSheetDialog(this)
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(24), dp(8), dp(12), dp(8))
+            addView(TextView(this@MainActivity).apply {
+                text = title
+                textSize = 22f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setTextColor(ICON_TINT)
+            }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            addView(chromeButton(R.drawable.ic_close).apply {
+                contentDescription = getString(R.string.close)
+                setOnClickListener { dialog.dismiss() }
+            }, LinearLayout.LayoutParams(dp(48), dp(48)))
+        }
+        val column = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            clipChildren = false
+            addView(header)
+            addView(content)
+        }
+        dialog.setContentView(column)
+        dialog.behavior.skipCollapsed = true
+        dialog.behavior.state = BottomSheetBehavior.STATE_EXPANDED
+        return dialog
     }
 
     private fun buildActionRow() {
@@ -743,30 +773,39 @@ class MainActivity : AppCompatActivity() {
         kidModeButton = chromeButton(R.drawable.ic_lock)
 
         for (b in listOf(fillToggle, undoButton, redoButton, clear, saveButton, photoButton, kidModeButton)) {
-            b.layoutParams = cellParams(52)
+            b.layoutParams = cellParams(TOOL_CELL_DP)
             binding.actionRow.addView(b)
         }
         refreshShapeStyleButton()
     }
 
-    /** One button style for every tool and action, so nothing looks out of place. */
+    /**
+     * One button style for every tool and action, so nothing looks out of place:
+     * a face on a lip (see KidChrome.kt) that squishes under the finger. The glyph
+     * sits a lip's height above centre, so it is centred on the face, not the key.
+     */
     private fun chromeButton(iconRes: Int): ImageView = ImageView(this).apply {
         setImageResource(iconRes)
-        imageTintList = ColorStateList.valueOf(ICON_TINT)
         scaleType = ImageView.ScaleType.FIT_CENTER
         val inset = dp(13)
-        setPadding(inset, inset, inset, inset)
+        setPadding(inset, inset, inset, inset + dp(4))
         isClickable = true
         isFocusable = true
+        squishOnPress()
         setSelectedLook(false)
     }
 
+    /** Accent face and a white glyph when chosen; white face and ink otherwise. */
     private fun View.setSelectedLook(selected: Boolean) {
-        background = GradientDrawable().apply {
-            shape = GradientDrawable.RECTANGLE
-            cornerRadius = dp(14).toFloat()
-            setColor(if (selected) 0xFFFFD27A.toInt() else Color.WHITE)
-            setStroke(dp(if (selected) 3 else 1), if (selected) 0xFFE08A00.toInt() else 0xFFD8C4B2.toInt())
+        val was = getTag(R.id.selected_look) as? Boolean
+        setTag(R.id.selected_look, selected)
+        background = if (selected) accentButton() else plainButton()
+        (this as? ImageView)?.imageTintList = ColorStateList.valueOf(if (selected) Color.WHITE else ICON_TINT)
+        // Becoming the chosen one gets a little bounce, so the eye finds it.
+        if (selected && was == false) {
+            scaleX = 1.14f
+            scaleY = 1.14f
+            springBack()
         }
     }
 
@@ -779,21 +818,24 @@ class MainActivity : AppCompatActivity() {
                 ShapeStyle.OUTLINE -> R.drawable.ic_shape_outline
             }
         )
-        // Outline is the plainest of the three, so it reads as the unset state.
-        fillToggle.setSelectedLook(style != ShapeStyle.OUTLINE)
+        // The glyph is the state; the accent is reserved for the chosen tool, so
+        // the toolbar never shows two orange buttons.
+        fillToggle.setSelectedLook(false)
     }
 
     // ---- selection ------------------------------------------------------------
 
     private fun selectColor(color: Int) {
         binding.paintView.color = color
+        val density = resources.displayMetrics.density
         for ((swatchColor, view) in colorSwatches) {
             val selected = swatchColor == color
-            view.background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(swatchColor)
-                setStroke(dp(if (selected) 4 else 1), if (selected) Color.BLACK else 0xFF8A7A6C.toInt())
-            }
+            view.background = SwatchDrawable(swatchColor, selected, density)
+            // The chosen blob stands proud of the row — bigger, and above its
+            // neighbours so the overlap goes the right way.
+            val rest = if (selected) 1.2f else 1f
+            if (view.restScale != rest) view.settleAt(rest)
+            view.translationZ = if (selected) density else 0f
         }
         updateSizePreview()
     }
@@ -812,17 +854,10 @@ class MainActivity : AppCompatActivity() {
         updateSizePreview()
     }
 
+    /** The size wedge is painted in the colour that will come out of the brush. */
     private fun updateSizePreview() {
-        val width = binding.paintView.strokeWidth
-        val dotColor = if (binding.paintView.tool == Tool.ERASER) Color.LTGRAY else binding.paintView.color
-        binding.sizePreview.background = GradientDrawable().apply {
-            shape = GradientDrawable.OVAL
-            setColor(dotColor)
-            // The preview caps out at the widget size; it hints at scale, not exact px.
-            val size = dp(6) + (width / 80f * dp(28)).toInt()
-            setSize(size, size)
-            setStroke(dp(1), 0xFF8A7A6C.toInt())
-        }
+        binding.sizeBar.color =
+            if (binding.paintView.tool == Tool.ERASER) ERASER_PREVIEW else binding.paintView.color
     }
 
     private fun refreshHistoryButtons() {
@@ -832,40 +867,81 @@ class MainActivity : AppCompatActivity() {
 
     // ---- text tool ------------------------------------------------------------
 
-    private fun promptForText(existing: String) {
-        val input = EditText(this).apply {
-            // Multi-line on purpose: Enter has to insert a line break rather than
-            // dismiss the dialog, because a typed break is the only way to say
-            // where a line ends that the box width cannot express.
-            inputType = InputType.TYPE_CLASS_TEXT or
-                InputType.TYPE_TEXT_FLAG_MULTI_LINE or
-                InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
-            setHorizontallyScrolling(false)
-            maxLines = 6
-            setText(existing)
-            setSelection(existing.length)
-            setPadding(dp(20), dp(16), dp(20), dp(16))
-        }
-        val dialog = AlertDialog.Builder(this)
-            .setTitle(R.string.text_dialog_title)
-            .setView(input)
-            .setPositiveButton(R.string.ok) { _, _ ->
-                binding.paintView.addText(input.text.toString())
-            }
-            .setNegativeButton(R.string.cancel) { _, _ -> binding.paintView.cancelText() }
-            .setOnCancelListener { binding.paintView.cancelText() }
-            .create()
+    /** How much of the window the keyboard covers from the bottom; 0 when it is down. */
+    private var keyboardHeight = 0
 
-        // The keyboard comes up with the dialog. Asking for the field to be tapped
-        // as well is one step too many, and in kid mode the immersive flags mean the
-        // soft input mode alone is not always enough — hence the explicit request.
-        input.requestFocus()
-        dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE)
-        dialog.show()
-        input.post {
-            val imm = getSystemService(InputMethodManager::class.java)
-            imm?.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT)
+    /** Set while the field is filled from the paper, so the echo is not typed back in. */
+    private var fillingInput = false
+
+    /**
+     * Typing goes straight onto the paper. The drawn box is the input: an unseen
+     * field holds the keyboard, and every letter it gets is handed to the box,
+     * which fits the words to itself. A dialog here covered the very box the
+     * words were for, and asked a question of a child who cannot read it.
+     */
+    private fun setUpTyping() {
+        val input = binding.textInput
+        // The paper must never be resized under the keyboard: ops are canvas
+        // pixels, and a new size recreates the bitmap. From Android 11 the window
+        // does not resize when drawing edge-to-edge, and the keyboard's height
+        // still arrives as an inset, which [keepTypingInView] uses to lift the
+        // paper out of its way instead. Before that, it simply covers what it covers.
+        window.setSoftInputMode(
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+            } else {
+                WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
+            }
+        )
+        input.doAfterTextChanged { text ->
+            if (!fillingInput) binding.paintView.typeText(text?.toString().orEmpty())
         }
+        input.setOnEditorActionListener { _, _, _ ->
+            binding.paintView.finishTyping()
+            true
+        }
+        binding.paintView.onTextRequested = { existing ->
+            fillingInput = true
+            input.setText(existing)
+            input.setSelection(existing.length)
+            fillingInput = false
+            input.requestFocus()
+            // In kid mode the immersive flags mean focus alone does not always
+            // bring the keyboard up; ask for it outright, once the focus has landed.
+            input.post {
+                getSystemService(InputMethodManager::class.java)
+                    ?.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT)
+            }
+            keepTypingInView()
+        }
+        binding.paintView.onTextEditEnded = {
+            getSystemService(InputMethodManager::class.java)
+                ?.hideSoftInputFromWindow(input.windowToken, 0)
+            input.clearFocus()
+            fillingInput = true
+            input.setText("")
+            fillingInput = false
+            keepTypingInView()
+        }
+    }
+
+    /**
+     * Slides the paper up just far enough that the box being typed into clears the
+     * keyboard, and back down when it is gone. A translation, not a resize — the
+     * paper keeps its size, so nothing drawn on it moves relative to it.
+     */
+    private fun keepTypingInView() {
+        val column = binding.paperColumn
+        val box = binding.paintView.typingBounds()
+        if (box == null || keyboardHeight == 0) {
+            column.translationY = 0f
+            return
+        }
+        val at = IntArray(2)
+        binding.paintView.getLocationInWindow(at)
+        val boxBottom = at[1] - column.translationY + box.bottom + dp(24)
+        val keyboardTop = binding.root.height - keyboardHeight
+        column.translationY = -(boxBottom - keyboardTop).coerceIn(0f, box.top.coerceAtLeast(0f))
     }
 
     // ---- saving ---------------------------------------------------------------
@@ -908,7 +984,7 @@ class MainActivity : AppCompatActivity() {
      * the hand can pick them up again; holding one offers to throw it away.
      */
     private fun showPictures() {
-        lateinit var dialog: AlertDialog
+        lateinit var dialog: BottomSheetDialog
         val columns = 3
         val grid = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -949,22 +1025,25 @@ class MainActivity : AppCompatActivity() {
             }
             grid.addView(row)
         }
-        dialog = AlertDialog.Builder(this)
-            .setTitle(R.string.pictures_title)
-            .setView(android.widget.ScrollView(this).apply { addView(grid) })
-            .setNegativeButton(R.string.cancel, null)
-            .show()
+        dialog = kidSheet(getString(R.string.pictures_title), android.widget.ScrollView(this).apply { addView(grid) })
+        dialog.show()
     }
 
-    /** One grid cell: a thumbnail, or the save icon with [label] under it. */
+    /**
+     * One grid cell: a thumbnail, or the save icon with [label] under it. The save
+     * tile wears the accent — it is the thing to press — and the tile of the
+     * picture the paper came from wears it too, as "this one is open".
+     */
     private fun pictureTile(thumb: File?, label: String?, selected: Boolean): View {
+        val primary = thumb == null
         val tile = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
             isClickable = true
             isFocusable = true
-            setSelectedLook(selected)
-            setPadding(dp(6), dp(6), dp(6), dp(6))
+            squishOnPress()
+            setSelectedLook(selected || primary)
+            setPadding(dp(6), dp(6), dp(6), dp(10))
         }
         val image = ImageView(this).apply {
             scaleType = ImageView.ScaleType.FIT_CENTER
@@ -972,8 +1051,8 @@ class MainActivity : AppCompatActivity() {
                 BitmapFactory.decodeFile(thumb.absolutePath)?.let { setImageBitmap(it) }
             } else {
                 setImageResource(R.drawable.ic_save)
-                imageTintList = ColorStateList.valueOf(ICON_TINT)
-                setPadding(dp(24), dp(24), dp(24), dp(8))
+                imageTintList = ColorStateList.valueOf(Color.WHITE)
+                setPadding(dp(28), dp(28), dp(28), dp(8))
             }
         }
         tile.addView(image, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
@@ -981,7 +1060,9 @@ class MainActivity : AppCompatActivity() {
             tile.addView(TextView(this).apply {
                 text = label
                 gravity = Gravity.CENTER
-                setTextColor(ICON_TINT)
+                textSize = 16f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setTextColor(if (primary) Color.WHITE else ICON_TINT)
             })
         }
         return tile
@@ -1029,7 +1110,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun confirmDeletePicture(id: String, then: () -> Unit) {
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle(R.string.picture_delete_title)
             .setPositiveButton(R.string.picture_delete) { _, _ ->
                 if (currentPictureId == id) currentPictureId = null
@@ -1085,7 +1166,34 @@ class MainActivity : AppCompatActivity() {
 
     // ---- helpers --------------------------------------------------------------
 
-    private fun toast(message: String) = Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+    /** Set while a hint is up, so a fade-out cut short by a new hint does not hide it. */
+    private var hintShowing = false
+
+    private val hideHint = Runnable {
+        hintShowing = false
+        binding.hintPill.animate().alpha(0f).translationY(-dp(8).toFloat()).setDuration(220)
+            .withEndAction { if (!hintShowing) binding.hintPill.visibility = View.GONE }
+            .start()
+    }
+
+    /**
+     * A hint at the top of the paper, in the app's own voice rather than the
+     * system toast's: a dark pill that drops in, waits, and fades. One at a time —
+     * a new one replaces whatever is showing.
+     */
+    private fun toast(message: String) {
+        val pill = binding.hintPill
+        ticker.removeCallbacks(hideHint)
+        pill.text = message
+        if (!hintShowing) {
+            pill.alpha = 0f
+            pill.translationY = -dp(12).toFloat()
+            pill.visibility = View.VISIBLE
+        }
+        hintShowing = true
+        pill.animate().alpha(1f).translationY(0f).setDuration(200).withEndAction(null).start()
+        ticker.postDelayed(hideHint, HINT_MS)
+    }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
@@ -1107,10 +1215,18 @@ class MainActivity : AppCompatActivity() {
         val VIBRATE_PATTERN = longArrayOf(0, 400, 250, 400, 250, 700)
 
         /** Every toolbar glyph is tinted this, so no icon reads as a stray emoji. */
-        const val ICON_TINT = 0xFF4A3B2E.toInt()
+        const val ICON_TINT = 0xFF3F2E22.toInt()
+        /** What the size wedge shows for the eraser: the pink of a pencil's rubber. */
+        const val ERASER_PREVIEW = 0xFFE8C4C0.toInt()
 
         const val COLORS_PER_ROW = 8
         const val TOOLS_PER_ROW = 5
+        /** Cell heights; each includes the 4 dp lip under the face. */
+        const val TOOL_CELL_DP = 56
+        const val DRAWER_CELL_DP = 68
+
+        /** How long a hint stays up: read twice, not long enough to nag. */
+        const val HINT_MS = 2200L
 
         val PALETTE = intArrayOf(
             0xFF000000.toInt(), 0xFF7A7A7A.toInt(), 0xFFFFFFFF.toInt(), 0xFF8B5A2B.toInt(),

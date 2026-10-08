@@ -1,5 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- The design tokens. Everything in the chrome is built from these few colours,
+     which is what makes the buttons, sheets, dialogs and hints read as one app.
+     Warm cream and a dark warm ink, with one orange accent for "this is picked". -->
 <resources>
-    <color name="chrome">#FFF3E9</color>
-    <color name="ic_launcher_background">#FFF3E9</color>
+    <!-- The tray the tools sit on, and the system bar strips. -->
+    <color name="chrome">#FFF3E3</color>
+    <!-- Sheets and dialogs: a shade lighter than the tray so they lift off it. -->
+    <color name="surface">#FFFBF6</color>
+    <!-- Icons and text. Warm near-black, never pure black next to the paper. -->
+    <color name="ink">#3F2E22</color>
+    <color name="ink_soft">#8A7664</color>
+    <!-- A button is a white face standing on a darker lip, like a toy key. -->
+    <color name="face">#FFFFFF</color>
+    <color name="lip">#E6D4C1</color>
+    <!-- The one accent: the selected tool, the primary button, the splash. -->
+    <color name="accent">#FF8A3D</color>
+    <color name="accent_lip">#D8691F</color>
+    <color name="accent_soft">#FFE1C7</color>
+    <color name="on_accent">#FFFFFF</color>
+    <color name="danger">#EB5757</color>
+    <!-- Hints that replace toasts: ink at 90% so the paper shows through a little. -->
+    <color name="hint_pill">#E63F2E22</color>
+    <color name="scrim">#CC2A1A10</color>
+    <color name="timer_track">#26000000</color>
+    <color name="splash">#5BC0EB</color>
+    <color name="ic_launcher_background">#5BC0EB</color>
 </resources>

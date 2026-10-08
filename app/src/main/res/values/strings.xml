@@ -2,9 +2,10 @@
 <resources>
     <string name="app_name">Little Painter</string>
     <string name="more_shapes_title">More shapes</string>
-    <string name="text_dialog_title">What should it say?</string>
     <string name="ok">OK</string>
     <string name="cancel">Cancel</string>
+    <string name="close">Close</string>
+    <string name="brush_size">Brush size</string>
     <string name="saved">Picture saved</string>
     <string name="save_failed">Could not save the picture</string>
     <string name="pictures_title">My pictures</string>

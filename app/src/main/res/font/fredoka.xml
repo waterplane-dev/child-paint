@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Fredoka (OFL 1.1, see font/OFL.txt): the one typeface for the whole app, on
+     the paper as well as in the chrome. Rounded terminals read as friendly, and a
+     child's caption on a drawing should look like it belongs to the drawing. The
+     file is the variable font; the weight axis is picked here per entry, which
+     Android honours from API 26. Below that the file's default instance is used. -->
+<font-family xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    <font
+        android:font="@font/fredoka_variable"
+        android:fontStyle="normal"
+        android:fontWeight="500"
+        android:fontVariationSettings="'wght' 500"
+        app:font="@font/fredoka_variable"
+        app:fontStyle="normal"
+        app:fontWeight="500"
+        app:fontVariationSettings="'wght' 500" />
+    <font
+        android:font="@font/fredoka_variable"
+        android:fontStyle="normal"
+        android:fontWeight="700"
+        android:fontVariationSettings="'wght' 650"
+        app:font="@font/fredoka_variable"
+        app:fontStyle="normal"
+        app:fontWeight="700"
+        app:fontVariationSettings="'wght' 650" />
+</font-family>

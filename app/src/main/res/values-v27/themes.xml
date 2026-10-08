@@ -2,11 +2,7 @@
 <resources>
     <!-- Edge-to-edge stops at the display cutout unless the window is told it may
          lay out into it; without this the notch strip stays black in kid mode. -->
-    <style name="Theme.ChildPaint" parent="Theme.Material3.Light.NoActionBar">
-        <item name="android:windowBackground">@color/chrome</item>
-        <item name="android:statusBarColor">@color/chrome</item>
-        <item name="android:navigationBarColor">@color/chrome</item>
-        <item name="android:windowLightStatusBar">true</item>
+    <style name="Theme.ChildPaint" parent="Base.Theme.ChildPaint">
         <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
     </style>
 </resources>
