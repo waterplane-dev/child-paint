@@ -348,10 +348,11 @@ class PaintCanvasView @JvmOverloads constructor(
      * The knobs on every live thing. A four-year-old's fingertip covers a small
      * shape completely, so grabbing the shape itself hides exactly what they are
      * trying to place. Each knob hangs off the thing on a string instead: the
-     * finger is on the knob, and the thing stays in view above it. The fourth,
-     * the bin, is tapped rather than dragged, and throws the thing away.
+     * finger is on the knob, and the thing stays in view above it. The last two
+     * are tapped rather than dragged: the bin throws the thing away, the tick
+     * puts it down so the knobs go and the picture can be looked at.
      */
-    private enum class Knob { MOVE, SIZE, TURN, DELETE }
+    private enum class Knob { MOVE, SIZE, TURN, DELETE, DONE }
 
     /** The knob the gesture in flight is dragging, if any. */
     private var knobDrag: Knob? = null
@@ -410,7 +411,8 @@ class PaintCanvasView @JvmOverloads constructor(
             Knob.SIZE to R.drawable.ic_knob_size,
             Knob.TURN to R.drawable.ic_knob_turn,
             // The same bin as the clear button: one picture for "throw away".
-            Knob.DELETE to R.drawable.ic_clear
+            Knob.DELETE to R.drawable.ic_clear,
+            Knob.DONE to R.drawable.ic_knob_done
         ).mapValues { (_, id) -> context.getDrawable(id)?.mutate()?.apply { setTint(Color.WHITE) } }
     }
 
@@ -748,7 +750,7 @@ class PaintCanvasView @JvmOverloads constructor(
     }
 
     /**
-     * A dashed box around the thing that is still adjustable, and its three knobs.
+     * A dashed box around the thing that is still adjustable, and its knobs.
      * Without the box nothing on screen says that this one thing can still be
      * moved and the rest cannot.
      */
@@ -802,6 +804,7 @@ class PaintCanvasView @JvmOverloads constructor(
             Knob.SIZE -> KNOB_SIZE_COLOR
             Knob.TURN -> KNOB_TURN_COLOR
             Knob.DELETE -> KNOB_DELETE_COLOR
+            Knob.DONE -> KNOB_DONE_COLOR
         }
         canvas.drawCircle(at.x + 2f * density, at.y + 3f * density, r, fillPaint(SHADOW_COLOR))
         canvas.drawCircle(at.x, at.y, r, fillPaint(color))
@@ -833,7 +836,7 @@ class PaintCanvasView @JvmOverloads constructor(
         // move knob hanging below. Two knobs on top of each other is one knob the
         // child cannot reach, so a knob that lands on another is swung round the
         // thing, a step at a time either way, until it is clear.
-        for (knob in listOf(Knob.MOVE, Knob.TURN, Knob.SIZE, Knob.DELETE)) {
+        for (knob in listOf(Knob.MOVE, Knob.TURN, Knob.SIZE, Knob.DELETE, Knob.DONE)) {
             val (anchor, center) = knobPlace(live, knob)
             fun clear(p: PointF) = placed.values.none { hypot(it.second.x - p.x, it.second.y - p.y) < r * 2.2f }
             var best = center
@@ -893,6 +896,20 @@ class PaintCanvasView @JvmOverloads constructor(
                 dy = dy / len * string * 0.8f
                 rotateAbout(px, py, cx, cy, live.angle) to rotateAbout(px + dx, py + dy, cx, cy, live.angle)
             }
+            // The free top corner, across the turn knob from the bin, so "yes" and
+            // "throw away" are as far apart as the thing allows. A line has no
+            // corners; its tick goes off the middle, square to the line.
+            Knob.DONE -> {
+                val line = (live as? LiveShape)?.kind == ShapeKind.LINE
+                val px = if (line) cx else box.right
+                val py = if (line) cy else box.top
+                var dx = if (line) live.y0 - live.y1 else 1f
+                var dy = if (line) live.x1 - live.x0 else -1f
+                val len = hypot(dx, dy).takeIf { it > 0.5f } ?: run { dx = 1f; dy = -1f; hypot(1f, 1f) }
+                dx = dx / len * string * 0.8f
+                dy = dy / len * string * 0.8f
+                rotateAbout(px, py, cx, cy, live.angle) to rotateAbout(px + dx, py + dy, cx, cy, live.angle)
+            }
         }
         center.x = center.x.coerceIn(r, (width - r).coerceAtLeast(r))
         center.y = center.y.coerceIn(r, (height - r).coerceAtLeast(r))
@@ -924,8 +941,9 @@ class PaintCanvasView @JvmOverloads constructor(
                 justPicked = false
 
                 // Touching a knob or the live thing adjusts it; touching anywhere
-                // else settles it and starts a new gesture there. No done button:
-                // the next thing the child does is the confirmation.
+                // else settles it and starts a new gesture there. The tick knob
+                // settles it too, for a child who wants the knobs gone without
+                // drawing anything next.
                 val current = live
                 val knob = current?.let { knobAt(it, x, y) }
                 if (knob != null) {
@@ -1037,14 +1055,15 @@ class PaintCanvasView @JvmOverloads constructor(
             }
 
             MotionEvent.ACTION_UP -> {
-                if (knobDrag == Knob.DELETE) {
+                val tapped = knobDrag
+                if (tapped == Knob.DELETE || tapped == Knob.DONE) {
                     knobDrag = null
                     activePointerId = MotionEvent.INVALID_POINTER_ID
-                    // Only if the finger is still on the bin: sliding off is how a
+                    // Only if the finger is still on the knob: sliding off is how a
                     // child who touched it by mistake gets out of it.
-                    val bin = live?.let { knobPlaces(it)[Knob.DELETE]?.second }
-                    if (bin != null && hypot(event.x - bin.x, event.y - bin.y) <= knobRadius() * KNOB_REACH) {
-                        deleteLive()
+                    val at = live?.let { knobPlaces(it)[tapped]?.second }
+                    if (at != null && hypot(event.x - at.x, event.y - at.y) <= knobRadius() * KNOB_REACH) {
+                        if (tapped == Knob.DELETE) deleteLive() else commitLive()
                     } else {
                         invalidate()
                     }
@@ -1153,8 +1172,8 @@ class PaintCanvasView @JvmOverloads constructor(
                 }
             }
             Knob.SIZE -> resizeLive(live, x, y)
-            // The bin does not follow the finger; it acts when the finger lifts.
-            Knob.DELETE -> return
+            // The bin and the tick do not follow the finger; they act when it lifts.
+            Knob.DELETE, Knob.DONE -> return
         }
         live.changed = true
         lastX = x
@@ -1635,8 +1654,9 @@ class PaintCanvasView @JvmOverloads constructor(
         const val STAMP_MM = 30f
         const val KNOB_MOVE_COLOR = 0xFF2F80ED.toInt()
         const val KNOB_SIZE_COLOR = 0xFFF2994A.toInt()
-        const val KNOB_TURN_COLOR = 0xFF27AE60.toInt()
+        const val KNOB_TURN_COLOR = 0xFF9B51E0.toInt()
         const val KNOB_DELETE_COLOR = 0xFFEB5757.toInt()
+        const val KNOB_DONE_COLOR = 0xFF27AE60.toInt()
         const val SHADOW_COLOR = 0x55000000
         /** How much bigger a held thing is drawn — lifted off the page. */
         const val HELD_SCALE = 1.05f

@@ -215,9 +215,12 @@ palette and the knobs are drawing colours, not chrome).
   under edge-to-edge, which does not resize but reports the IME inset, and
   `keepTypingInView()` *translates* the paper column up so the box clears it;
   below 30 it is `adjustNothing`.
-- Every live thing has **four knobs on strings** — move (hangs below), size
-  (off the corner), turn (above), and a red bin (off the opposite corner) —
-  whatever its size. The bin acts on lift, and only if the finger is still on it.
+- Every live thing has **five knobs on strings** — move (hangs below), size
+  (off the corner), turn (above, purple), a red bin (off the opposite corner)
+  and a green tick (off the other top corner) — whatever its size. The bin and
+  the tick act on lift, and only if the finger is still on them; the tick just
+  settles the thing (`commitLive()`), for a child who wants the knobs gone
+  without drawing something else. Turn is purple so green means only "done".
   Binning a thing that was just made first records it and then relocates it to
   nowhere (`RelocateOp(…, null)`), so one undo brings it back; a selection is
   binned as an `EraseOp` of the pixels it lifted. They exist because a
