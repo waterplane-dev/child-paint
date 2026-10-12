@@ -1,0 +1,7 @@
+[
+  {
+    "id": "debug-apk",
+    "name": "Debug APK",
+    "cmd": "./gradlew assembleDebug"
+  }
+]
