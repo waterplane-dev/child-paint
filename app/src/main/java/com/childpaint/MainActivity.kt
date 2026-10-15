@@ -466,9 +466,15 @@ class MainActivity : AppCompatActivity() {
     private fun applyEdgeToEdgeInsets() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         ViewCompat.setOnApplyWindowInsetsListener(binding.root) { view, insets ->
-            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
             keyboardHeight = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
+            // The keyboard brings the hidden bars back in kid mode. Following them
+            // would resize the paper, and a resize settles the text box being typed
+            // into, which puts the keyboard away again — typing never got a letter
+            // in. So the padding holds still while the keyboard is up.
+            if (keyboardHeight == 0) {
+                val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+                view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+            }
             keepTypingInView()
             insets
         }
