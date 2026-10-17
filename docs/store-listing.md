@@ -154,7 +154,7 @@ no ads, and no data collection:
 ### Privacy policy URL
 
 ```
-https://johanneshoh.github.io/child-paint/privacy-policy
+https://waterplane-dev.github.io/child-paint/privacy-policy
 ```
 
 (Only resolves once the repository is public and GitHub Pages is serving

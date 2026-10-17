@@ -72,11 +72,12 @@ any time:
 
 ## Contact
 
-Questions about this policy: johanneshoh@googlemail.com
+Responsible for this app: Johannes Hoh. Questions about this policy and any
+request about your data: johanneshoh@googlemail.com
 
 ## Canonical version
 
 The canonical copy of this policy lives in the app's source repository at
 `docs/privacy-policy.md`. The version published at
-https://johanneshoh.github.io/child-paint/privacy-policy is generated from
+https://waterplane-dev.github.io/child-paint/privacy-policy is generated from
 that file.

@@ -87,7 +87,7 @@ binding, or serialization depend on.
 - [ ] Make `github.com/johanneshoh/child-paint` public.
 - [ ] Enable GitHub Pages for the repo, source set to the `/docs` folder on
       the default branch.
-- [ ] Confirm `https://johanneshoh.github.io/child-paint/privacy-policy`
+- [ ] Confirm `https://waterplane-dev.github.io/child-paint/privacy-policy`
       resolves and renders `docs/privacy-policy.md` correctly. (This URL
       does not exist until this step is done — Play Console will reject it
       if entered earlier.)
