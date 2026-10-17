@@ -28,7 +28,7 @@ only for a phone held in one hand, with a parent's kid mode built in. More in
 ## Install
 
 **APK:** download `little-painter-<version>.apk` from the
-[latest GitHub release](https://github.com/JohannesHoh/child-paint/releases/latest)
+[latest GitHub release](https://github.com/waterplane-dev/child-paint/releases/latest)
 and open it on the phone. Android asks once to allow installs from your browser
 or file manager. Updates are the same: install the newer APK over the old one;
 the drawing and settings stay.
