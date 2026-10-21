@@ -1,18 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Android 12+ equivalent of backup_rules.xml. Both sections exclude the
-  kid-mode preferences: the parental PIN is stored there in plain text and must
-  not travel off the device, whether by cloud backup or by device-to-device
-  transfer. Everything else, the autosaved canvas included, is carried over.
-
-  A phone restored from backup therefore starts in parent mode with no saved
-  PIN, which is the correct outcome: the parent sets kid mode up again.
+  Android 12+ rules. android:allowBackup="false" switches off cloud backup, but on
+  Android 12+ it does not by itself stop device-to-device transfer, so this file
+  excludes every domain from BOTH. Nothing the app stores (drawings, saved
+  pictures, the kid-mode PIN and session) ever leaves the device through the OS.
+  A phone set up from another one starts with an empty app, by design.
 -->
 <data-extraction-rules>
     <cloud-backup>
-        <exclude domain="sharedpref" path="kid_mode.xml" />
+        <exclude domain="root" path="." />
+        <exclude domain="file" path="." />
+        <exclude domain="database" path="." />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="external" path="." />
     </cloud-backup>
     <device-transfer>
-        <exclude domain="sharedpref" path="kid_mode.xml" />
+        <exclude domain="root" path="." />
+        <exclude domain="file" path="." />
+        <exclude domain="database" path="." />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="external" path="." />
     </device-transfer>
 </data-extraction-rules>

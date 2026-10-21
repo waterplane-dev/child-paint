@@ -4,7 +4,7 @@
 # Phone screenshots are captured from the REAL debug build on an Android emulator (adb screencap),
 # then composited onto Play's canvas: 1080x2160 JPEG (Play refuses a long side over twice the short
 # one, and PNG with alpha), a caption band on top (one short present-tense sentence, <= ~40 chars),
-# the app below. The icon (512x512 PNG, no alpha) and feature graphic (1024x500 PNG, no alpha) are drawn
+# the app below. The icon (512x512 32-bit PNG with alpha) and feature graphic (1024x500 PNG, no alpha) are drawn
 # from the launcher icon's own paths and the app's design tokens (res/values/colors.xml).
 #
 # Usage:
@@ -89,7 +89,15 @@ shots() {
   tap 1215 2800; sleep 1; snap 04-kid-mode
   a shell input keyevent BACK; sleep 0.8
 
-  # My pictures (save button)
+  # My pictures: save the house, start a new picture (press and hold the bin), paint a second one
+  # and save it too, then open the sheet so it shows both. Saving closes the sheet.
+  tap 1048 2800; sleep 1; tap 250 2640; sleep 1.5
+  a shell input swipe 780 2800 780 2800 1500; sleep 1
+  tool $T_BUCKET; color $LPINK; tap 600 600
+  newshape $S_OVAL $YELLOW; sdrag 380 700 860 1180
+  newshape $S_TRI $PURPLE; sdrag 250 1300 1000 1800
+  commit
+  tap 1048 2800; sleep 1; tap 250 2640; sleep 1.5
   tap 1048 2800; sleep 1; snap 05-my-pictures
   a shell input keyevent BACK; sleep 0.8
 
@@ -125,6 +133,8 @@ graphics() {
   mkdir -p "$OUT"
   # Chromium draws both (the launcher icon's own paths + Fredoka); NODE_PATH must reach `playwright`.
   node "$ROOT/scripts/store/graphics.cjs" "$OUT" "$ROOT/app/src/main/res/font/fredoka_variable.ttf"
+  # Play wants the 512x512 icon as 32-bit PNG with alpha (RGBA); Chromium wrote an opaque RGB one.
+  magick "$OUT/icon.png" -alpha on -define png:color-type=6 "$OUT/icon.png"
 }
 
 case "${1:-all}" in

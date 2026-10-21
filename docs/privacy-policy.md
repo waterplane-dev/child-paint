@@ -1,6 +1,6 @@
 # Privacy Policy — Little Painter
 
-Effective date: 2026-08-22
+Effective date: 2026-10-21
 
 Little Painter (package `io.github.johanneshoh.childpaint`) is a shape and
 drawing app for children. This policy is short because the app does very
@@ -33,6 +33,18 @@ via the `WRITE_EXTERNAL_STORAGE` permission, which the app requests only on
 those older versions and only for this purpose). That file stays on the
 device; the app has no means of transmitting it elsewhere.
 
+## Backup and transfer
+
+The app opts out of Android's Auto Backup (`allowBackup="false"`) and excludes
+all of its data from both cloud backup and device-to-device transfer. Drawings,
+saved pictures, the kid-mode session and the PIN are therefore never copied to
+a Google account or to a new phone by Android. A phone set up from another one
+starts with an empty Little Painter. The one exception is a picture a parent
+saved to the gallery with the save button: that is an ordinary file in the
+Pictures folder, which the phone's own gallery or photo-backup app may handle
+like any other photo, under that app's own settings and not under this app's
+control.
+
 ## Photos
 
 A parent can optionally switch on "Paint on a photo", which opens the Android
@@ -51,15 +63,17 @@ kid mode is running.
 
 Kid mode lets a parent hand the phone to a child for a limited, supervised
 session. The optional 4-digit unlock PIN is stored in the app's private
-SharedPreferences, on-device only. It is excluded from Android's automatic
-cloud backup and from device-to-device transfer, so it never leaves the
-device even via those OS-level mechanisms.
+SharedPreferences, on-device only. Like everything else the app
+stores, it is excluded from Android's automatic cloud backup and from
+device-to-device transfer (see "Backup and transfer" below).
 
 ## Children's privacy
 
 Little Painter is directed at children. It collects no personal information,
 and no information of any kind, from anyone — including children — so there
-is nothing about a child to disclose, share, or delete.
+is nothing about a child to disclose, share, or delete. Because no personal
+information is collected, no parental consent is required under COPPA or the
+GDPR's child-consent rules.
 
 A parent who wants to remove all app data can do either of the following at
 any time:

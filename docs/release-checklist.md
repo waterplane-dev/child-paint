@@ -6,13 +6,12 @@ bottom; later steps depend on earlier ones.
 ## Decisions to confirm before anything is public
 
 - [ ] **The contact email `johanneshoh@googlemail.com` will be publicly
-      visible**, both in the repo (this file, `docs/privacy-policy.md`,
-      `docs/store-listing.md`) and in the Play Store listing (Data safety
+      visible**, both in the repo (this file, `docs/privacy-policy.md`) and in the Play Store listing (Data safety
       form, and wherever Play surfaces developer contact details). If that
       is not wanted, swap it for a forwarding alias **now**, before the repo
       goes public or anything is submitted to Play, and update it in every
       file above.
-- [ ] Confirm the GitHub owner/repo (`johanneshoh/child-paint`) is the one
+- [ ] Confirm the GitHub owner/repo (`waterplane-dev/child-paint`) is the one
       to make public — there is no undo for history already pushed to a
       public repo.
 - [ ] Confirm `io.github.johanneshoh.childpaint` is the applicationId to
@@ -78,13 +77,13 @@ binding, or serialization depend on.
       produces `app/build/outputs/bundle/release/app-release.aab`.
 - [ ] Play Console requires an **AAB (Android App Bundle)**, not an APK, for
       new app uploads — do not try to upload the release APK instead.
-- [ ] `versionCode` (currently 1) must increment on every single upload to
-      Play, including test tracks; `versionName` (currently "1.0") is
+- [ ] `versionCode` (see `app/build.gradle.kts`) must increment on every single upload to
+      Play, including test tracks; `versionName` is
       user-facing and does not need to change on every build.
 
 ## 4. Make the repository and docs public
 
-- [ ] Make `github.com/johanneshoh/child-paint` public.
+- [ ] Make `github.com/waterplane-dev/child-paint` public.
 - [ ] Enable GitHub Pages for the repo, source set to the `/docs` folder on
       the default branch.
 - [ ] Confirm `https://waterplane-dev.github.io/child-paint/privacy-policy`
@@ -107,17 +106,22 @@ Work through in this order:
 - [ ] Complete the **IARC content rating questionnaire**. Given no
       violence, no user-generated content, no ads, and no data collection,
       expect a result of **Everyone** (ESRB) / **PEGI 3**. See
-      `docs/store-listing.md` for the drafted question-by-question answers.
+      `docs/store-listing.md` for the summary of answers.
 - [ ] Complete the **Data safety form**: answer that the app collects no
       data and shares no data.
 - [ ] Enter the privacy policy URL from step 4.
 - [ ] Complete the **ads declaration**: no ads.
 - [ ] Complete **app access**: no login required, all functionality
       available without special access.
-- [ ] Upload the AAB from step 3 to a **closed testing** track first. Add
-      at least one tester, confirm the build installs and passes Play's
-      automated pre-launch report, before promoting to production.
-- [ ] Only after closed testing looks clean, promote to **production**.
+- [ ] Listing text and graphics: paste from `fastlane/metadata/android/en-US/`
+      (source of truth; graphics via `scripts/store/play-assets.sh`).
+- [ ] Upload the AAB from step 3 to **internal testing** to check it installs,
+      then to a **closed test**. A new personal developer account must run the
+      closed test with **at least 12 testers opted in for 14 continuous days**
+      (per app) before it may apply for production access. Check the pre-launch
+      report meanwhile.
+- [ ] After day 14, apply for production access in Play Console, then promote
+      to **production**.
 
 ## Known limitations to be aware of when listing
 

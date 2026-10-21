@@ -1,4 +1,4 @@
-// Store icon (512x512 PNG, no alpha) and feature graphic (1024x500 PNG, no alpha), drawn in Chromium
+// Store icon (512x512 32-bit PNG; the shell script converts it to RGBA) and feature graphic (1024x500 PNG, no alpha), drawn in Chromium
 // from the launcher icon's own paths (app/src/main/res/drawable/ic_launcher_foreground.xml) and the design
 // tokens in res/values/colors.xml, with the app's Fredoka font. Run via scripts/store/play-assets.sh graphics.
 // Usage: NODE_PATH=/path/to/node_modules node graphics.cjs <outDir> <fredoka.ttf>
