@@ -1,6 +1,6 @@
 # Privacy Policy — Little Painter
 
-Effective date: 2026-10-21
+Effective date: 2026-10-21 (last updated 2026-10-21)
 
 Little Painter (package `io.github.johanneshoh.childpaint`) is a shape and
 drawing app for children. This policy is short because the app does very
@@ -65,7 +65,7 @@ Kid mode lets a parent hand the phone to a child for a limited, supervised
 session. The optional 4-digit unlock PIN is stored in the app's private
 SharedPreferences, on-device only. Like everything else the app
 stores, it is excluded from Android's automatic cloud backup and from
-device-to-device transfer (see "Backup and transfer" below).
+device-to-device transfer (see "Backup and transfer" above).
 
 ## Children's privacy
 
@@ -86,8 +86,20 @@ any time:
 
 ## Contact
 
-Responsible for this app: Johannes Hoh. Questions about this policy and any
-request about your data: johanneshoh@googlemail.com
+Controller for this app: Johannes Hohenbichler, Ganswiesenweg 21, 73728
+Gerlingen, Germany. Questions about this policy and any request about your
+data: johanneshohenbichler@googlemail.com. See the
+[Impressum](https://waterplane.dev/impressum.html).
+
+## Data protection rights (GDPR)
+
+The app does not process any personal data about you (Art. 4(1) GDPR). If you
+email me, your address and your message are processed to reply, on the basis
+of Art. 6(1)(f) GDPR (legitimate interest in answering enquiries), and deleted
+when no longer needed. You have the rights of access, rectification, erasure,
+restriction of processing, data portability and objection under Art. 15 to 21
+GDPR. You may complain to a supervisory authority, for example the
+Landesbeauftragte für Datenschutz und Informationsfreiheit Baden-Württemberg.
 
 ## Canonical version
 
