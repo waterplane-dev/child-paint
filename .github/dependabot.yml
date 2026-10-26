@@ -1,0 +1,22 @@
+# Solo project: updates are grouped and monthly on purpose, so there is one PR to
+# review a month instead of a stream. The 7-day cooldown skips freshly published
+# releases (supply-chain hygiene).
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+  - package-ecosystem: gradle
+    directory: "/"
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    groups:
+      gradle-minor-patch:
+        update-types: [minor, patch]
